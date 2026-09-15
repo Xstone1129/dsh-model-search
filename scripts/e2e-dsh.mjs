@@ -11,8 +11,14 @@
  *
  * 前置条件：本机已经跑着 `dsh web`，并且插件已装好。
  * 说明：脚本不会改动任何配置——只点击、只读取，结束时点「取消」关掉弹窗。
- * 副作用：首次运行会让 DSH 多出一个空的「新会话」条目（浏览器没有会话就新建一个），
- *         删除它对会话列表没有影响。
+ * 副作用：
+ *   1. 首次运行会让 DSH 多出一个空的「新会话」条目（浏览器没有会话就新建一个），
+ *      删除它对会话列表没有影响。
+ *   2. 拖动推理强度那一步会真的改设置：空会话上选模型/档位会写进 `settings.yaml`
+ *      的 `agent-default-model`。脚本结束会把档位还原成开始时读到的那个；
+ *      不想让它碰设置就加 `--skip-effort`。
+ *
+ * 额外模式：`--set-effort High` 只做一件事——把推理强度拖到指定档位（维护用）。
  */
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -282,13 +288,15 @@ const driverFor = (PROVIDER, FINAL_QUERY) => String.raw`(async () => {
   return { steps, ok: true, total };
 })()`;
 
-/** 第二阶段：输入框旁的模型菜单。 */
-const menuDriverFor = (FINAL_QUERY) => String.raw`(async () => {
+/** 第二阶段：模型菜单的两级选择 + 推理强度能量条。 */
+const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
+  const SKIP_EFFORT = ${JSON.stringify(SKIP_EFFORT)};
+  const ONLY_EFFORT = ${JSON.stringify(ONLY_EFFORT)};
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const steps = [];
   const note = (step, detail) => steps.push({ step, detail });
   const textOf = (node) => (node?.textContent ?? "").replace(/\s+/g, " ").trim();
-  const waitFor = async (probe, label, timeout = 15000) => {
+  const waitFor = async (probe, label, timeout = 20000) => {
     const deadline = Date.now() + timeout;
     for (;;) {
       const value = probe();
@@ -298,55 +306,137 @@ const menuDriverFor = (FINAL_QUERY) => String.raw`(async () => {
     }
   };
 
-  // 关掉设置面板，回到会话
+  // 关掉设置面板，回到会话（另开页面时本就没有，兜底一下）
   const settingsClose = document.querySelector('button[aria-label="关闭"], button[aria-label="Close"]');
-  if (settingsClose) { settingsClose.click(); await sleep(500); }
+  if (settingsClose) { settingsClose.click(); await sleep(400); }
 
-  // 打开输入框旁的模型菜单
   const trigger = await waitFor(() => document.querySelector('[aria-label^="选择模型"], [aria-label^="Select model"]'), "trigger");
   if (!trigger) { note("打开模型菜单", "❌ 没找到模型选择器"); return { steps, ok: false }; }
+  const beforeAria = trigger.getAttribute("aria-label");
   trigger.click();
-  await sleep(400);
+  await sleep(500);
 
-  // 进入「模型」子面板
-  const cell = await waitFor(() => {
-    const menu = document.querySelector('div[role="menu"]');
-    if (!menu) return null;
-    return Array.from(menu.querySelectorAll('[role="menuitem"]')).find((n) => /^模型|^Model$/.test(textOf(n)));
-  }, "cell");
-  if (!cell) { note("进入模型列表", "❌ 菜单里没找到「模型」入口"); return { steps, ok: false }; }
-  cell.click();
-  note("进入模型列表", textOf(cell));
-  await sleep(1500);
-  const snapshot = document.querySelector('div[role="menu"]');
-  note("菜单内容快照", snapshot ? textOf(snapshot).slice(0, 240) : "❌ 菜单已经关掉了");
+  // 宿主根面板（模型 / 推理等级）→ 插件自动进「模型」面板 → 第一层是线路列表
+  // 打开菜单的瞬间做几帧采样：看宿主的原始列表有没有先露出来（用户反馈的「闪一下」）
+  const frames = [];
+  for (let i = 0; i < 6; i += 1) {
+    const host = document.querySelector('[role="menu"] section[role="group"]')?.parentElement;
+    const ours = document.querySelector("[data-dms-split]");
+    frames.push((host ? (host.style.display === "none" ? "宿主已收起" : "宿主可见") : "无宿主列表") + "/" + (ours ? "已接管" : "未接管"));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+  const flashed = frames.some((frame) => frame.startsWith("宿主可见"));
+  note("打开瞬间逐帧采样", frames.join(" → ") + (flashed ? " ⚠️ 有一帧露出了宿主原始列表" : " ✅ 全程没有露出原始列表"));
 
-  const menu = document.querySelector('div[role="menu"]');
-  const ITEM = 'button[role="menuitemradio"], button[role="menuitem"]';
-  const items = Array.from(menu?.querySelectorAll('section[role="group"] ' + ITEM) ?? []);
-  const groups = Array.from(menu?.querySelectorAll('section[role="group"]') ?? []);
-  note("菜单里的模型总数", items.length + "（分组 " + groups.length + " 个）");
-  note("当前 minItems 阈值", String(window.dshModelSearch?.options?.minItems));
+  const vendors = await waitFor(() => {
+    const list = Array.from(document.querySelectorAll("[data-dms-vendors] .dms-vendor"));
+    return list.length > 0 ? list : null;
+  }, "vendors");
+  if (!vendors) { note("第一层线路列表", "❌ 没出现（可能模型总数少于 minItems）"); return { steps, ok: false }; }
+  note("第一层：先选线路", vendors.map((node) => textOf(node)).join(" ｜ "));
+  note("宿主的模型列表此刻", (() => {
+    const host = document.querySelector('[role="menu"] section[role="group"]')?.parentElement;
+    if (!host) return "没有分组（宿主此刻不在模型面板）";
+    return host.style.display === "none" ? "已收起（第一层不摊开）✅" : "仍可见 ❌";
+  })());
+
+  // 选模型最多的那条线路
+  const best = vendors
+    .map((node) => ({ node, n: Number((textOf(node).match(/(\d+)/) ?? [0, 0])[1]) }))
+    .sort((a, b) => b.n - a.n)[0];
+  best.node.click();
+  await sleep(300);
 
   const bar = await waitFor(() => document.querySelector('[data-dms-bar="menu"]'), "menu bar");
-  if (!bar) {
-    note("菜单搜索框", "❌ 没注入（模型数 " + items.length + " < 阈值时属于预期行为）");
-    return { steps, ok: false };
-  }
-  note("菜单搜索框已注入", "placeholder = " + bar.querySelector(".dms-input").placeholder);
+  if (!bar) { note("菜单搜索框", "❌ 没注入"); return { steps, ok: false }; }
+  const colLeft = document.querySelectorAll("[data-dms-vendors] .dms-vendor").length;
+  const colRight = document.querySelectorAll("[data-dms-models] .dms-option").length;
+  const activeVendor = textOf(document.querySelector("[data-dms-vendors] .dms-vendorOn"));
+  note("两栏：左栏线路 / 右栏模型", "左 " + colLeft + " 条（选中：" + activeVendor + "）｜ 右 " + colRight + " 个模型，两栏同时可见=" + (colLeft > 0 && colRight > 0));
+  note("右栏家族分组", Array.from(document.querySelectorAll("[data-dms-models] [data-dms-grouphead]")).map((n) => textOf(n)).join(" ｜ "));
 
-  const visible = () => items.filter((n) => n.style.display !== "none").map((n) => textOf(n));
+  function visibleItems() {
+    return Array.from(document.querySelectorAll("[data-dms-models] .dms-option"));
+  }
+
+  // 搜索（仍在第二层内过滤）
   const input = bar.querySelector(".dms-input");
   input.value = "flash";
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  await sleep(80);
-  note("搜索 flash", visible().length + " 条：" + visible().join(", "));
-  note("空分组已隐藏", groups.filter((g) => g.style.display === "none").map((g) => textOf(g.querySelector(".groupTitle") || g).slice(0, 24)).join(" / ") || "（没有全空的分组）");
-  note("计数文案", textOf(bar.querySelector(".dms-count")));
-  note("隐藏的空分组", groups.filter((g) => g.style.display === "none").length + " / " + groups.length);
+  await sleep(150);
+  note("第二层搜索 flash", visibleItems().length + " 条：" + visibleItems().map((n) => textOf(n)).join(", ").slice(0, 120));
+  input.value = "";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await sleep(150);
 
-  if (${JSON.stringify(FINAL_QUERY)}) input.value = ${JSON.stringify(FINAL_QUERY)};
-  return { steps, ok: visible().length > 0 };
+  // ── 推理强度能量条 ──
+  if (SKIP_EFFORT) {
+    const hidden = document.querySelector("[data-dms-effort]");
+    note("推理强度能量条", hidden ? "已跳过拖动测试（--skip-effort）" : "❌ 没渲染");
+    return { steps, ok: Boolean(hidden) };
+  }
+  const effort = document.querySelector("[data-dms-effort]");
+  if (!effort || effort.hasAttribute("hidden")) {
+    note("推理强度能量条", "❌ 没渲染（宿主服务不可用，或这个模型没有推理档位）");
+    return { steps, ok: false };
+  }
+  const track = effort.querySelector("[data-dms-track]");
+  const segs = Array.from(effort.querySelectorAll("[data-dms-seg]"));
+  const value = () => textOf(effort.querySelector(".dms-effortValue"));
+  const original = value();
+  note("能量条：档位", segs.map((seg) => seg.getAttribute("title")).join(" → ") + "（当前 " + original + "）");
+  note("能量条：无障碍语义", "role=" + track.getAttribute("role") + " aria-valuenow=" + track.getAttribute("aria-valuenow") + "/" + track.getAttribute("aria-valuemax"));
+
+  // 真实几何拖动：从当前档拖到另一端，再把档位还原回去
+  if (segs.length < 2) { note("拖动测试", "跳过（只有一档）"); return { steps, ok: true }; }
+  const lastIndex = segs.length - 1;
+
+  if (ONLY_EFFORT) {
+    const at = segs.findIndex((seg) => String(seg.getAttribute("title")).toLowerCase() === ONLY_EFFORT.toLowerCase());
+    if (at === -1) { note("--set-effort", "❌ 没有这个档位：" + ONLY_EFFORT + "（可选：" + segs.map((s2) => s2.getAttribute("title")).join(" / ") + "）"); return { steps, ok: false }; }
+    const r = track.getBoundingClientRect();
+    const x = r.left + (r.width * (at + 0.5)) / segs.length;
+    for (const type of ["pointerdown", "pointerup"]) {
+      track.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: r.top + r.height / 2, pointerId: 9, isPrimary: true }));
+      await sleep(150);
+    }
+    await sleep(700);
+    note("--set-effort", "已设为 " + value() + (value() === segs[at].getAttribute("title") ? " ✅" : " ❌"));
+    return { steps, ok: value() === segs[at].getAttribute("title") };
+  }
+  const currentIndex = segs.findIndex((seg) => seg.getAttribute("title") === original);
+  const targetIndex = currentIndex === lastIndex ? 0 : lastIndex;
+
+  const rect = track.getBoundingClientRect();
+  const y = rect.top + rect.height / 2;
+  const xAt = (index) => rect.left + (rect.width * (index + 0.5)) / segs.length;
+  const fire = (type, x, id = 1) => track.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: id, isPrimary: true }));
+
+  fire("pointerdown", xAt(currentIndex));
+  await sleep(60);
+  note("按下当前档（预览应不变）", value());
+  fire("pointermove", xAt(targetIndex));
+  await sleep(60);
+  note("拖到「" + segs[targetIndex].getAttribute("title") + "」的预览（还没松手）", value());
+  fire("pointerup", xAt(targetIndex));
+  await sleep(700);
+  const after = value();
+  note("松手后（已提交给宿主）", after + "；模型选择器 aria：" + (document.querySelector('[aria-label^="选择模型"]')?.getAttribute("aria-label") ?? "?"));
+
+  // 还原成原来的档位，别动用户的设置
+  const backIndex = segs.findIndex((seg) => seg.getAttribute("title") === original);
+  if (backIndex !== -1 && after !== original) {
+    const rect2 = track.getBoundingClientRect();
+    const backX = rect2.left + (rect2.width * (backIndex + 0.5)) / segs.length;
+    const y2 = rect2.top + rect2.height / 2;
+    for (const type of ["pointerdown", "pointerup"]) {
+      track.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: backX, clientY: y2, pointerId: 2, isPrimary: true }));
+      await sleep(120);
+    }
+    await sleep(700);
+    note("还原回「" + original + "」", value() + (value() === original ? " ✅" : " ❌ 没还原成功"));
+  }
+  return { steps, ok: value() === original && after !== original };
 })()`;
 
 const probe = String.raw`(() => {
@@ -399,7 +489,7 @@ const main = async () => {
       console.log("\n── 输入框旁的模型菜单 ──");
       const menuPage = await attachPage(browser, ORIGIN);
       await sleep(Number(flag("wait", 4000)));
-      const menuReport = await evaluate(menuPage, menuDriverFor(flag("shot-query", "")));
+      const menuReport = await evaluate(menuPage, menuDriverFor(hasFlag("skip-effort"), flag("set-effort", "")));
       for (const { step, detail } of menuReport.steps) console.log(`• ${step}：${detail}`);
       console.log(menuReport.ok ? "✅ 菜单搜索框验证通过" : "❌ 菜单搜索框验证失败");
       if (hasFlag("screenshot")) {

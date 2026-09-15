@@ -71,12 +71,19 @@ export function boot({ html = "", lang = "zh-CN" } = {}) {
     throw new Error(`客户端插件不应 require 外部模块，却请求了 ${specifier}`);
   });
   const disposers = [];
+  /** 假的服务表：用例可以按需塞 `modelDirectories` 进去。 */
+  const services = new Map();
   const ctx = {
     effect(callback) {
       const dispose = callback();
       disposers.push(typeof dispose === "function" ? dispose : () => {});
       return () => {};
     },
+    /** 对应真实 cordis 上下文的可选服务读取。 */
+    get(name) {
+      return services.get(name);
+    },
+    services,
   };
 
   return {

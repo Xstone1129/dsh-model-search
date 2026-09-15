@@ -151,3 +151,291 @@
 	outline: 2px solid var(--dsw-alias-border-l3, rgba(128, 128, 128, 0.5));
 	outline-offset: 1px;
 }
+
+/* ── 两级选择（v1.1+）：左栏线路 / 右栏模型子列表 ─────────────────── */
+
+.dms-split {
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+	/* 菜单本身有 max-height + overflow:hidden，所以这里必须能被压缩：
+	   否则两栏一撑长，下面的推理强度能量条就被裁掉了。 */
+	flex: 1 1 auto;
+	min-height: 96px;
+	max-height: min(320px, 46vh);
+}
+
+.dms-split[hidden] {
+	display: none;
+}
+
+.dms-col {
+	box-sizing: border-box;
+	min-height: 0;
+	overflow-y: auto;
+	--dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+	--dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* 左栏：线路。窄、可省略、当前项高亮 */
+.dms-colLeft {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 0 0 auto;
+	/* 宽度跟着最长的线路名走（限制在 46% 以内），名字短就不用留一条空栏 */
+	width: max-content;
+	min-width: 78px;
+	max-width: 46%;
+	padding-right: 4px;
+	border-right: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
+}
+
+/* 右栏：模型子列表 */
+.dms-colRight {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	flex: 1 1 auto;
+	min-width: 0;
+	padding-left: 4px;
+}
+
+.dms-vendor {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	min-height: 30px;
+	padding: 0 8px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--dsw-alias-label-secondary, inherit);
+	font: inherit;
+	font-size: 13px;
+	line-height: 20px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.dms-vendor:hover,
+.dms-vendor:focus-visible {
+	background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16));
+	color: var(--dsw-alias-label-primary, inherit);
+	outline: none;
+}
+
+.dms-vendorOn {
+	background: var(--dsw-alias-interactive-bg-hover-solid, rgba(128, 128, 128, 0.2));
+	color: var(--dsw-alias-label-primary, inherit);
+	font-weight: 600;
+}
+
+.dms-vendorName {
+	flex: auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.dms-vendorMeta {
+	flex: none;
+	color: var(--dsw-alias-label-tertiary, #8b8b8b);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 400;
+}
+
+.dms-vendorAll .dms-vendorName {
+	font-size: 12px;
+}
+
+/* 家族小标题（右栏内，滚动时吸顶） */
+.dms-groupHead,
+.dms-providerHead {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px 3px;
+	background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, #1c1c1c));
+	color: var(--dsw-alias-label-tertiary, #8b8b8b);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 18px;
+}
+
+.dms-providerHead {
+	color: var(--dsw-alias-label-secondary, inherit);
+	font-weight: 600;
+}
+
+.dms-groupN {
+	color: var(--dsw-alias-label-dimmed, rgba(128, 128, 128, 0.7));
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 400;
+}
+
+/* 模型行：和宿主同一套视觉语言 */
+.dms-option {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	min-height: 32px;
+	padding: 0 10px;
+	border: none;
+	border-radius: 10px;
+	background: transparent;
+	color: var(--dsw-alias-label-primary, inherit);
+	font: inherit;
+	font-size: 13px;
+	line-height: 20px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.dms-option:hover,
+.dms-option:focus-visible {
+	background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16));
+	outline: none;
+}
+
+.dms-optionOn {
+	color: var(--dsw-alias-brand-primary, #4d6bfe);
+}
+
+.dms-optionLabel {
+	flex: auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.dms-optionCheck {
+	flex: none;
+	color: var(--dsw-alias-brand-primary, #4d6bfe);
+	font-size: 12px;
+}
+
+.dms-legacy {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	max-height: min(320px, 46vh);
+	overflow-y: auto;
+	flex: 1 1 auto;
+	min-height: 96px;
+	--dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+	--dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.dms-legacy[hidden] {
+	display: none;
+}
+
+/* ── 推理强度能量条（v1.2） ───────────────────────────────────────── */
+
+.dms-effort {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+	padding: 4px 4px 8px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
+	flex: none;
+}
+
+.dms-effort[hidden] {
+	display: none;
+}
+
+.dms-effortLabel {
+	flex: none;
+	color: var(--dsw-alias-label-tertiary, #8b8b8b);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+/* 轨道：一格一档，从低到高排开，拖动/点击都能定位 */
+.dms-track {
+	display: flex;
+	flex: auto;
+	min-width: 0;
+	gap: 3px;
+	height: 18px;
+	padding: 3px;
+	box-sizing: border-box;
+	border-radius: 9px;
+	background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.14));
+	cursor: pointer;
+	touch-action: none;
+	outline: none;
+}
+
+.dms-track:hover {
+	background: var(--dsw-alias-interactive-bg-hover-solid, rgba(128, 128, 128, 0.22));
+}
+
+.dms-track:focus-visible {
+	box-shadow: 0 0 0 2px var(--dsw-alias-border-l3, rgba(128, 128, 128, 0.5));
+}
+
+.dms-track[aria-busy="true"] {
+	opacity: 0.6;
+}
+
+.dms-seg {
+	flex: 1 1 0;
+	min-width: 6px;
+	border-radius: 4px;
+	background: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.32));
+	transition: background 0.12s ease;
+}
+
+.dms-segOn {
+	background: var(--dsw-alias-brand-primary, #4d6bfe);
+}
+
+.dms-segPending {
+	box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary, #4d6bfe);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.dms-seg {
+		transition: none;
+	}
+}
+
+.dms-effortValue {
+	flex: none;
+	min-width: 40px;
+	text-align: right;
+	color: var(--dsw-alias-label-secondary, inherit);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.dms-effortErr {
+	flex: none;
+	max-width: 46%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--dsw-alias-state-error-primary, #e5484d);
+	font-size: 11px;
+}
+
+.dms-effortErr[hidden] {
+	display: none;
+}

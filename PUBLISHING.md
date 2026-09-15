@@ -95,10 +95,17 @@ npm publish --access public
 npm run build
 npm test                                   # 30 个用例
 node scripts/e2e-dsh.mjs                   # 需要本机跑着 dsh web 且插件已装
+node scripts/e2e-dsh.mjs --skip-effort     # 不碰推理强度设置的那一轮
+node scripts/e2e-dsh.mjs --set-effort High # 把推理强度拖到指定档位（维护用）
 node scripts/e2e-dsh.mjs --probe           # 界面选择器变了时用来重新勘察
 ```
 
 `scripts/e2e-dsh.mjs` 会在真实浏览器里走「设置 → 模型 → 自定义提供方 → 编辑 →
-获取可用模型」，逐条断言搜索框注入位置、过滤结果、计数、批量勾选，任一环节失败
-进程退出码非 0。**改动宿主结构相关的选择器后，这个脚本是最快发现回归的地方**——
+获取可用模型」，逐条断言搜索框注入位置、过滤结果、计数、批量勾选；接着另开一页
+验证模型菜单的两栏级联、家族分组、打开瞬间不闪（逐帧采样），并真的拖一次推理强度
+能量条（结束会还原）。任一环节失败进程退出码非 0。
+
+⚠️ 能量条的拖动会写设置：**空会话**上选模型/档位会落到 `settings.yaml` 的
+`agent-default-model`。脚本会把档位还原成开始时读到的那个；不想让它碰设置就加
+`--skip-effort`。**改动宿主结构相关的选择器后，这个脚本是最快发现回归的地方**——
 本项目 `role="menuitemradio"` 的坑就是它抓出来的。

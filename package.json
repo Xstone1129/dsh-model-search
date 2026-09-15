@@ -1,7 +1,7 @@
 {
   "name": "dsh-model-search",
-  "version": "1.0.0",
-  "description": "给 DeepSeek Harness 的模型列表加上搜索框：自定义提供方一次拉回上百个模型时，也能秒定位要勾的那个。Adds a search box to DeepSeek Harness model lists — the \"fetch models\" dialog and the composer model menu.",
+  "version": "1.2.0",
+  "description": "给 DeepSeek Harness 的模型列表加上搜索框与两级选择：自定义提供方一次拉回上百个模型时，先选线路、再按 DeepSeek/GPT/其他挑型号，怎么都能秒定位。Search + two-level picker (provider first, then model family) for DeepSeek Harness model lists.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

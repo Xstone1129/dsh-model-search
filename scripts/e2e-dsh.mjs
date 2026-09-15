@@ -139,6 +139,22 @@ async function openPage(url) {
   return { browser, session, targetId: session.targetId };
 }
 
+/**
+ * 用 CDP 发一次**真实**鼠标点击（而不是页面内 element.click()）。
+ *
+ * 为什么必须这样：`element.click()` 不会移动焦点，而真人点击会先把焦点给被点的按钮。
+ * 插件第一次的「点线路菜单就关了」的 bug 正是只在真焦点下出现——页内 click 永远测不出来。
+ * @param {object} session CDP 会话。
+ * @param {number} x 视口坐标 X。
+ * @param {number} y 视口坐标 Y。
+ */
+async function dispatchClick(session, x, y) {
+  const base = { x, y, button: "left", clickCount: 1, buttons: 1 };
+  await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...base, buttons: 0 });
+  await session.send("Input.dispatchMouseEvent", { type: "mousePressed", ...base });
+  await session.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...base, buttons: 0 });
+}
+
 /** 在页面里跑一段（可 await 的）脚本，返回结构化结果。 */
 async function evaluate(session, expression) {
   const result = await session.send("Runtime.evaluate", {
@@ -288,10 +304,8 @@ const driverFor = (PROVIDER, FINAL_QUERY) => String.raw`(async () => {
   return { steps, ok: true, total };
 })()`;
 
-/** 第二阶段：模型菜单的两级选择 + 推理强度能量条。 */
-const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
-  const SKIP_EFFORT = ${JSON.stringify(SKIP_EFFORT)};
-  const ONLY_EFFORT = ${JSON.stringify(ONLY_EFFORT)};
+/** 第二阶段第 1 步：打开菜单，采样防闪烁，并给出「要点哪条线路、坐标在哪」。 */
+const menuOpenSnippet = String.raw`(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const steps = [];
   const note = (step, detail) => steps.push({ step, detail });
@@ -306,68 +320,119 @@ const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
     }
   };
 
-  // 关掉设置面板，回到会话（另开页面时本就没有，兜底一下）
   const settingsClose = document.querySelector('button[aria-label="关闭"], button[aria-label="Close"]');
   if (settingsClose) { settingsClose.click(); await sleep(400); }
 
-  const trigger = await waitFor(() => document.querySelector('[aria-label^="选择模型"], [aria-label^="Select model"]'), "trigger");
-  if (!trigger) { note("打开模型菜单", "❌ 没找到模型选择器"); return { steps, ok: false }; }
-  const beforeAria = trigger.getAttribute("aria-label");
-  trigger.click();
-  await sleep(500);
-
-  // 宿主根面板（模型 / 推理等级）→ 插件自动进「模型」面板 → 第一层是线路列表
-  // 打开菜单的瞬间做几帧采样：看宿主的原始列表有没有先露出来（用户反馈的「闪一下」）
-  const frames = [];
-  for (let i = 0; i < 6; i += 1) {
-    const host = document.querySelector('[role="menu"] section[role="group"]')?.parentElement;
-    const ours = document.querySelector("[data-dms-split]");
-    frames.push((host ? (host.style.display === "none" ? "宿主已收起" : "宿主可见") : "无宿主列表") + "/" + (ours ? "已接管" : "未接管"));
-    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  const TRIGGER = '[aria-label^="选择模型"], [aria-label^="Select model"], [aria-haspopup="menu"][aria-label]';
+  let trigger = await waitFor(() => document.querySelector(TRIGGER), "trigger", 25000);
+  if (!trigger) {
+    const seen = Array.from(document.querySelectorAll("button[aria-label]")).map((b) => b.getAttribute("aria-label")).slice(0, 12);
+    note("打开模型菜单", "❌ 没找到模型选择器；当前带 aria-label 的按钮：" + (seen.join(" ｜ ") || "（一个都没有）"));
+    return { steps, ok: false };
   }
-  const flashed = frames.some((frame) => frame.startsWith("宿主可见"));
-  note("打开瞬间逐帧采样", frames.join(" → ") + (flashed ? " ⚠️ 有一帧露出了宿主原始列表" : " ✅ 全程没有露出原始列表"));
+  // 逐帧记录「打开菜单」的全过程。采样必须在**点击之前**就开起来：
+  // 上一版是点完 500ms 才开始采样，第一帧的闪烁永远录不到。
+  const recording = [];
+  let recordingOn = true;
+  const sample = () => {
+    const menu = document.querySelector('div[role="menu"]');
+    if (!menu) return "无菜单";
+    const host = menu.querySelector('section[role="group"]')?.parentElement;
+    const ours = menu.querySelector("[data-dms-split]");
+    const rootRows = menu.querySelectorAll(':scope > button[role="menuitem"]').length;
+    if (ours && host) return host.style.display === "none" ? "我们的两栏" : "我们的两栏+宿主列表";
+    if (rootRows > 0) return "宿主的根面板";
+    if (host) return host.style.display === "none" ? "宿主列表(已收起)" : "宿主的模型列表";
+    return "菜单(其它)";
+  };
+  const tick = () => {
+    if (!recordingOn) return;
+    recording.push(sample());
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  await sleep(150);
+
+  trigger.click();
+  await sleep(700);
+  recordingOn = false;
+
+  const compressed = [];
+  for (const frame of recording) {
+    const last = compressed[compressed.length - 1];
+    if (last !== undefined && last.state === frame) last.frames += 1;
+    else compressed.push({ state: frame, frames: 1 });
+  }
+  const timeline = compressed.map((entry) => entry.state + "×" + entry.frames).join(" → ");
+  const nativeFrames = recording.filter((frame) => frame !== "无菜单" && frame !== "我们的两栏").length;
+  note("打开过程逐帧时间线", timeline + (nativeFrames > 0 ? " ⚠️ 有 " + nativeFrames + " 帧露出了宿主原生界面" : " ✅ 全程只有我们的两栏"));
 
   const vendors = await waitFor(() => {
     const list = Array.from(document.querySelectorAll("[data-dms-vendors] .dms-vendor"));
     return list.length > 0 ? list : null;
   }, "vendors");
-  if (!vendors) { note("第一层线路列表", "❌ 没出现（可能模型总数少于 minItems）"); return { steps, ok: false }; }
-  note("第一层：先选线路", vendors.map((node) => textOf(node)).join(" ｜ "));
-  note("宿主的模型列表此刻", (() => {
-    const host = document.querySelector('[role="menu"] section[role="group"]')?.parentElement;
-    if (!host) return "没有分组（宿主此刻不在模型面板）";
-    return host.style.display === "none" ? "已收起（第一层不摊开）✅" : "仍可见 ❌";
-  })());
+  if (!vendors) { note("左栏线路列表", "❌ 没出现（模型总数可能少于 minItems）"); return { steps, ok: false }; }
 
-  // 选模型最多的那条线路
-  const best = vendors
-    .map((node) => ({ node, n: Number((textOf(node).match(/(\d+)/) ?? [0, 0])[1]) }))
-    .sort((a, b) => b.n - a.n)[0];
-  best.node.click();
-  await sleep(300);
+  // 挑一条不是当前选中的线路，交给 Node 用真鼠标去点
+  const active = document.querySelector("[data-dms-vendors] .dms-vendorOn");
+  const target =
+    vendors.find((node) => node !== active && Number((textOf(node).match(/(\d+)/) ?? [0, 0])[1]) >= 4) ??
+    vendors.find((node) => node !== active) ??
+    vendors[0];
+  const rect = target.getBoundingClientRect();
+  note("左栏线路", vendors.map((node) => textOf(node)).join(" ｜ ") + "；将用真鼠标点击：" + textOf(target));
 
-  const bar = await waitFor(() => document.querySelector('[data-dms-bar="menu"]'), "menu bar");
-  if (!bar) { note("菜单搜索框", "❌ 没注入"); return { steps, ok: false }; }
-  const colLeft = document.querySelectorAll("[data-dms-vendors] .dms-vendor").length;
-  const colRight = document.querySelectorAll("[data-dms-models] .dms-option").length;
+  return {
+    steps,
+    ok: true,
+    target: { name: target.getAttribute("data-dms-provider"), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+  };
+})()`;
+
+/** 第二阶段第 3 步：点完之后的所有断言（菜单必须还开着，右栏换成这条线路）。 */
+const menuAfterClickSnippet = (SKIP_EFFORT, ONLY_EFFORT, EXPECT) => String.raw`(async () => {
+  const SKIP_EFFORT = ${JSON.stringify(SKIP_EFFORT)};
+  const ONLY_EFFORT = ${JSON.stringify(ONLY_EFFORT)};
+  const EXPECT = ${JSON.stringify(EXPECT)};
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const steps = [];
+  const note = (step, detail) => steps.push({ step, detail });
+  const textOf = (node) => (node?.textContent ?? "").replace(/\s+/g, " ").trim();
+  const menu = document.querySelector('div[role="menu"]');
+  const visibleItems = () => Array.from(document.querySelectorAll("[data-dms-models] .dms-option"));
+
+  note("真鼠标点线路后菜单还在吗", menu ? "✅ 还在（焦点没有掉出去）" : "❌ 菜单被关掉了");
+  if (!menu) return { steps, ok: false };
   const activeVendor = textOf(document.querySelector("[data-dms-vendors] .dms-vendorOn"));
-  note("两栏：左栏线路 / 右栏模型", "左 " + colLeft + " 条（选中：" + activeVendor + "）｜ 右 " + colRight + " 个模型，两栏同时可见=" + (colLeft > 0 && colRight > 0));
+  note("左栏当前线路", activeVendor + (activeVendor === EXPECT ? " ✅" : " ❌ 期望 " + EXPECT));
+
+  const colLeft = document.querySelectorAll("[data-dms-vendors] .dms-vendor").length;
+  const colRight = visibleItems().length;
+  note("两栏：左栏线路 / 右栏模型", "左 " + colLeft + " 条 ｜ 右 " + colRight + " 个模型，两栏同时可见=" + (colLeft > 0 && colRight > 0));
   note("右栏家族分组", Array.from(document.querySelectorAll("[data-dms-models] [data-dms-grouphead]")).map((n) => textOf(n)).join(" ｜ "));
 
-  function visibleItems() {
-    return Array.from(document.querySelectorAll("[data-dms-models] .dms-option"));
-  }
-
-  // 搜索（仍在第二层内过滤）
+  const bar = menu.querySelector('[data-dms-bar="menu"]');
   const input = bar.querySelector(".dms-input");
   input.value = "flash";
   input.dispatchEvent(new Event("input", { bubbles: true }));
   await sleep(150);
-  note("第二层搜索 flash", visibleItems().length + " 条：" + visibleItems().map((n) => textOf(n)).join(", ").slice(0, 120));
+  note("右栏内搜索 flash", visibleItems().length + " 条：" + visibleItems().map((n) => textOf(n)).join(", ").slice(0, 120));
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true }));
   await sleep(150);
+
+  // 回到一开始那条线路，看看连着点会不会出问题（第一次的 bug 正是「点一下就没了」）
+  const others = Array.from(document.querySelectorAll("[data-dms-vendors] .dms-vendor")).filter(
+    (node) => node.getAttribute("data-dms-provider") !== activeVendor,
+  );
+  if (others.length > 0) {
+    const before = document.activeElement;
+    others[0].click();
+    await sleep(200);
+    note("再点另一条线路", document.querySelector('div[role="menu"]') ? "✅ 菜单仍在" : "❌ 菜单被关掉");
+    note("焦点有没有丢", document.activeElement === document.body ? "❌ 掉到 body 了" : "✅ 还在 " + (document.activeElement?.className || document.activeElement?.tagName));
+    void before;
+  }
 
   // ── 推理强度能量条 ──
   if (SKIP_EFFORT) {
@@ -387,7 +452,6 @@ const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
   note("能量条：档位", segs.map((seg) => seg.getAttribute("title")).join(" → ") + "（当前 " + original + "）");
   note("能量条：无障碍语义", "role=" + track.getAttribute("role") + " aria-valuenow=" + track.getAttribute("aria-valuenow") + "/" + track.getAttribute("aria-valuemax"));
 
-  // 真实几何拖动：从当前档拖到另一端，再把档位还原回去
   if (segs.length < 2) { note("拖动测试", "跳过（只有一档）"); return { steps, ok: true }; }
   const lastIndex = segs.length - 1;
 
@@ -404,9 +468,9 @@ const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
     note("--set-effort", "已设为 " + value() + (value() === segs[at].getAttribute("title") ? " ✅" : " ❌"));
     return { steps, ok: value() === segs[at].getAttribute("title") };
   }
+
   const currentIndex = segs.findIndex((seg) => seg.getAttribute("title") === original);
   const targetIndex = currentIndex === lastIndex ? 0 : lastIndex;
-
   const rect = track.getBoundingClientRect();
   const y = rect.top + rect.height / 2;
   const xAt = (index) => rect.left + (rect.width * (index + 0.5)) / segs.length;
@@ -423,7 +487,6 @@ const menuDriverFor = (SKIP_EFFORT, ONLY_EFFORT) => String.raw`(async () => {
   const after = value();
   note("松手后（已提交给宿主）", after + "；模型选择器 aria：" + (document.querySelector('[aria-label^="选择模型"]')?.getAttribute("aria-label") ?? "?"));
 
-  // 还原成原来的档位，别动用户的设置
   const backIndex = segs.findIndex((seg) => seg.getAttribute("title") === original);
   if (backIndex !== -1 && after !== original) {
     const rect2 = track.getBoundingClientRect();
@@ -489,7 +552,23 @@ const main = async () => {
       console.log("\n── 输入框旁的模型菜单 ──");
       const menuPage = await attachPage(browser, ORIGIN);
       await sleep(Number(flag("wait", 4000)));
-      const menuReport = await evaluate(menuPage, menuDriverFor(hasFlag("skip-effort"), flag("set-effort", "")));
+
+      const opened = await evaluate(menuPage, menuOpenSnippet);
+      for (const { step, detail } of opened.steps) console.log(`• ${step}：${detail}`);
+      if (!opened.ok) {
+        console.log("❌ 打不开模型菜单");
+        process.exitCode = 1;
+        return;
+      }
+
+      // 关键一步：用真鼠标（会移动焦点）点左栏线路——页内 element.click() 测不出这个 bug
+      await dispatchClick(menuPage, opened.target.x, opened.target.y);
+      await sleep(300);
+      const report = await evaluate(
+        menuPage,
+        menuAfterClickSnippet(hasFlag("skip-effort"), flag("set-effort", ""), opened.target.name),
+      );
+      const menuReport = report;
       for (const { step, detail } of menuReport.steps) console.log(`• ${step}：${detail}`);
       console.log(menuReport.ok ? "✅ 菜单搜索框验证通过" : "❌ 菜单搜索框验证失败");
       if (hasFlag("screenshot")) {

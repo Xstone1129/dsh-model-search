@@ -227,8 +227,17 @@ function withMenu(groups = PROVIDERS, options = {}, { markChecked = null, html =
   env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ autoFocus: false, ...options }));
   env.exports.apply(env.ctx);
   const menu = env.document.querySelector('div[role="menu"]');
+  // 复刻宿主的 onBlur：焦点一旦落到菜单外面，它就把整个菜单关掉。
+  // （宿主用的是 React onBlur，也就是冒泡的 focusout；这里手写一份等价监听。）
+  const host = { closed: false };
+  menu.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (next instanceof env.window.Node && menu.contains(next)) return;
+    host.closed = true;
+  });
   return {
     ...env,
+    host,
     menu,
     bar: menu.querySelector('[data-dms-bar="menu"]'),
     vendors: menu.querySelector("[data-dms-vendors]"),
@@ -273,6 +282,54 @@ test("菜单：左栏线路带条数，选中项高亮，当前线路有标记",
   assert.equal(activeVendor(env), "DeepSeek 官方", "没有当前模型时退回第一条线路");
   assert.equal(env.vendors.querySelector(".dms-vendorOn").getAttribute("aria-pressed"), "true");
   assert.equal(env.vendors.querySelectorAll('[aria-pressed="true"]').length, 1);
+  env.dispose();
+});
+
+test("菜单：点线路时焦点必须还在那颗按钮上（否则宿主会以为点到外面，把菜单关掉）", () => {
+  const env = withMenu();
+  const button = Array.from(env.vendors.querySelectorAll(".dms-vendor"))[1];
+
+  // 真人点击：mousedown 先把焦点给按钮，然后才派发 click
+  button.focus();
+  assert.equal(env.document.activeElement, button, "前置条件：按钮拿到了焦点");
+  button.click();
+
+  assert.equal(env.document.activeElement, button, "重绘后焦点不能丢（节点必须被复用）");
+  assert.equal(env.host.closed, false, "宿主绝不能因此关掉菜单");
+  assert.equal(activeVendor(env), "lingsuan");
+  assert.equal(env.vendors.isConnected, true);
+  env.dispose();
+});
+
+test("菜单：拖动/连续切换线路时焦点一直留在左栏", () => {
+  const env = withMenu();
+  const buttons = Array.from(env.vendors.querySelectorAll(".dms-vendor"));
+  for (const index of [1, 2, 0, 1]) {
+    const button = Array.from(env.vendors.querySelectorAll(".dms-vendor"))[index];
+    button.focus();
+    button.click();
+    assert.equal(env.document.activeElement, button, `第 ${index} 条线路：焦点不该丢`);
+    assert.equal(env.host.closed, false, `第 ${index} 条线路：菜单不该被关掉`);
+  }
+  env.dispose();
+});
+
+test("菜单：节点按名字复用，不会因为重绘重建（否则焦点必然丢）", () => {
+  const env = withMenu();
+  const before = Array.from(env.vendors.querySelectorAll(".dms-vendor"))[0];
+  Array.from(env.vendors.querySelectorAll(".dms-vendor"))[1].click();
+  const after = env.vendors.querySelector('[data-dms-provider="DeepSeek 官方"]');
+  assert.equal(after, before, "同一线路必须是同一个 DOM 节点");
+  env.dispose();
+});
+
+test("菜单：搜索把某条线路筛掉后，它才从 DOM 里消失", () => {
+  const env = withMenu();
+  type(env.window, env.bar.querySelector(".dms-input"), "flash");
+  assert.equal(vendorNames(env).includes("DeepSeek 官方"), false);
+  assert.equal(env.vendors.querySelector('[data-dms-provider="DeepSeek 官方"]'), null);
+  type(env.window, env.bar.querySelector(".dms-input"), "");
+  assert.deepEqual(vendorNames(env), ["DeepSeek 官方", "lingsuan", "chatanywhere"], "清空搜索后回来");
   env.dispose();
 });
 
@@ -421,6 +478,18 @@ test("菜单：drilldown: false 退回老的一栏列表", () => {
 
   type(env.window, env.bar.querySelector(".dms-input"), "flash");
   assert.equal(env.legacy.querySelectorAll(".dms-option").length, 7);
+  env.dispose();
+});
+
+test("菜单：不同线路里的同名模型各占一行，不会互相顶掉", () => {
+  // 夹具里 chatanywhere 的模型列表和 DeepSeek 官方有重名（deepseek-chat / deepseek-reasoner）
+  const env = withMenu(PROVIDERS, { drilldown: false });
+  const rows = Array.from(env.legacy.querySelectorAll(".dms-option")).map((n) =>
+    n.querySelector(".dms-optionLabel").textContent.trim(),
+  );
+  const total = PROVIDERS.reduce((sum, provider) => sum + provider.models.length, 0);
+  assert.equal(rows.length, total, "每个模型都要有自己的行");
+  assert.equal(rows.filter((label) => label === "deepseek-chat").length, 2, "同名模型出现两次才对");
   env.dispose();
 });
 

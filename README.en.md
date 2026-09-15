@@ -8,7 +8,7 @@ A hundred models? Pick the route on the left, the model on the right — grouped
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![DSH Plugin](https://img.shields.io/badge/topic-dsh--plugin-0e7490?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![Version](https://img.shields.io/badge/version-1.2.0-green?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.2.1-green?style=flat-square)](package.json)
 
 [简体中文](README.md) · **English**
 
@@ -196,8 +196,9 @@ This repo has zero build dependencies: `lib/client.js` is produced by wrapping
 `src/client.js` in DSH's `window.__ModuleLoader__.load({ id, factory })` envelope.
 
 ```bash
-npm run build     # src/ → lib/client.js (inlines CSS, checks the version)
-npm test          # 54 cases: pure logic + the real artifact loaded in jsdom + a fake model directory
+npm run build          # src/ → lib/client.js (inlines CSS, checks the version)
+npm test               # 59 cases: pure logic + the real artifact in jsdom + a fake model directory
+npm run check:browser  # real-Chrome checks (layout/focus); does NOT need dsh web running
 node scripts/e2e-dsh.mjs --screenshot out.png   # real-browser E2E (needs a running dsh web)
 node scripts/e2e-dsh.mjs --skip-effort          # the run that leaves your settings alone
 node scripts/e2e-dsh.mjs --set-effort High      # maintenance: drag the effort to a named level
@@ -207,7 +208,9 @@ node scripts/e2e-dsh.mjs --set-effort High      # maintenance: drag the effort t
 src/client.js        browser half (the factory body: apply / inject)
 src/client.css       injected styles (DSH theme variables, light and dark)
 scripts/build.mjs    bundler (dependency-free: envelope + inlined CSS)
-scripts/e2e-dsh.mjs  headless-Chrome E2E: dialog search / cascade / effort drag
+scripts/e2e-dsh.mjs  headless-Chrome E2E: dialog search / cascade / effort drag (real mouse events)
+scripts/browser-check.mjs  real-Chrome self-check: stable panel size, real clicks keep the menu open
+test/harness.html    the page that self-check drives (inlines the host menu's layout rules)
 lib/index.js         host half (a no-op shell so the Loader discovers the browser half)
 lib/client.js        built artifact (committed — installs need no build)
 test/                node:test suites (jsdom fixtures + a fake modelDirectories service)

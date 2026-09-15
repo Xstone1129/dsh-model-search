@@ -20,7 +20,7 @@
  */
 
 /** 插件版本（与 package.json 保持一致，构建时校验）。 */
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 
 /** 注入样式的标签标识，避免重复注入。 */
 const STYLE_TAG_ID = "dsh-model-search/styles.css";
@@ -619,6 +619,71 @@ function setVisible(node, visible) {
 	} else if (node.style.display !== "none") node.style.setProperty("display", "none");
 }
 
+/**
+ * 把容器同步成给定的一批节点：只删该消失的、只插该新增或该挪位置的，
+ * **绝不整片重建**。
+ *
+ * 为什么这条这么重要：鼠标点击会先把焦点给被点的按钮。如果重绘时把那个按钮删掉，
+ * 浏览器会把焦点掉回 body，宿主的 `onBlur`（它监听菜单根上的 focusout）就会认为
+ * 「用户点到菜单外面去了」而把整个菜单关掉——表现就是「点了线路，菜单直接没了」。
+ * 复用节点身份，焦点就不会丢。
+ * @param {HTMLElement} container 容器。
+ * @param {HTMLElement[]} wanted 目标子节点（顺序即最终顺序）。
+ */
+function syncNodes(container, wanted) {
+	const keep = new Set(wanted);
+	for (const node of Array.from(container.children)) if (!keep.has(node)) node.remove();
+	let anchor = container.firstChild;
+	for (const node of wanted) {
+		if (node === anchor) {
+			anchor = anchor.nextSibling;
+			continue;
+		}
+		container.insertBefore(node, anchor);
+	}
+}
+
+/**
+ * 建或复用一颗可点按钮，并把它刷成目标状态。
+ * @param {Map<string, { node: HTMLElement, onClick: () => void }>} cache 复用表。
+ * @param {string} key 身份键（线路名 / 模型名 / 家族名）。
+ * @param {object} spec 目标状态：`className` / `parts`（两个 span 的类名）/ `label` / `meta` / `attrs` / `onClick`。
+ * @returns {HTMLElement} 可放进容器的按钮。
+ */
+function reuseButton(cache, key, spec) {
+	let entry = cache.get(key);
+	if (entry === undefined) {
+		const node = h("button", { class: spec.className, type: "button" }, [
+			h("span", { class: spec.parts[0] }),
+			h("span", { class: spec.parts[1] }),
+		]);
+		entry = { node, onClick: null };
+		// 事件只挂一次：回调每次都从 entry 上现取，所以永远指着最新的那个模型项。
+		node.addEventListener("click", () => entry.onClick?.());
+		cache.set(key, entry);
+	}
+	const { node } = entry;
+	entry.onClick = spec.onClick;
+
+	if (node.className !== spec.className) node.className = spec.className;
+	for (const [name, value] of Object.entries(spec.attrs ?? {})) {
+		if (value === null || value === undefined) {
+			if (node.hasAttribute(name)) node.removeAttribute(name);
+		} else if (node.getAttribute(name) !== String(value)) {
+			node.setAttribute(name, String(value));
+		}
+	}
+	const [primary, secondary] = node.children;
+	if (primary.textContent !== spec.label) primary.textContent = spec.label;
+	if (secondary !== undefined && secondary.textContent !== spec.meta) secondary.textContent = spec.meta;
+	return node;
+}
+
+/** 复用表瘦身：只留这一轮真正用到的键，避免模型换了一轮后无限增长。 */
+function pruneCache(cache, used) {
+	for (const key of [...cache.keys()]) if (!used.has(key)) cache.delete(key);
+}
+
 /** 刷新对话框搜索条：过滤、计数、按钮可见性。 */
 function renderDialog(ctl) {
 	const rows = candidateRows(ctl.ul);
@@ -665,6 +730,7 @@ function showHint(ctl, text) {
 
 /**
  * 左栏：线路列表。当前线路高亮，带模型条数；搜索时同时按「线路名」和「线路里的模型名」筛。
+ * 节点按线路名复用（见 {@link reuseButton}），所以点一下不会把焦点弄丢、菜单不会被关掉。
  * @param {object} ctl 控制器。
  * @param {object[]} view 线路视图。
  * @param {string[]} terms 搜索关键词。
@@ -672,26 +738,26 @@ function showHint(ctl, text) {
  */
 function renderVendorColumn(ctl, view, terms) {
 	const hits = view.filter((provider) => provider.nameHit || provider.matched.length > 0);
-	const buttons = hits.map((provider) =>
-		h(
-			"button",
-			{
-				class: `dms-vendor${ctl.provider === provider.name && !ctl.all ? " dms-vendorOn" : ""}`,
-				type: "button",
-				"data-dms-provider": provider.name,
-				"aria-pressed": ctl.provider === provider.name && !ctl.all ? "true" : "false",
-				title: provider.name,
-				onclick: () => selectProvider(ctl, provider.name),
-			},
-			[
-				h("span", { class: "dms-vendorName", text: provider.name || "—" }),
-				h("span", {
-					class: "dms-vendorMeta",
-					text: String(terms.length === 0 ? provider.items.length : provider.matched.length),
-				}),
-			],
-		),
-	);
+	const used = new Set();
+	const nodes = [];
+
+	const pushVendor = (key, label, meta, active, onClick) => {
+		used.add(key);
+		nodes.push(
+			reuseButton(ctl.cache.vendors, key, {
+				className: `dms-vendor${active ? " dms-vendorOn" : ""}${key === "*" ? " dms-vendorAll" : ""}`,
+				parts: ["dms-vendorName", "dms-vendorMeta"],
+				label,
+				meta,
+				attrs: {
+					"data-dms-provider": key,
+					"aria-pressed": active ? "true" : "false",
+					title: label,
+				},
+				onClick,
+			}),
+		);
+	};
 
 	// 「所有线路」项：搜索结果散在多条线路上时出现，进了这个模式就一直留着，
 	// 否则清空搜索后用户会看不到自己还在「所有线路」里。
@@ -701,25 +767,21 @@ function renderVendorColumn(ctl, view, terms) {
 			terms.length === 0
 				? view.reduce((sum, provider) => sum + provider.items.length, 0)
 				: withHits.reduce((sum, provider) => sum + provider.matched.length, 0);
-		buttons.unshift(
-			h(
-				"button",
-				{
-					class: `dms-vendor dms-vendorAll${ctl.all ? " dms-vendorOn" : ""}`,
-					type: "button",
-					"data-dms-provider": "*",
-					title: ctl.t.allProviders,
-					onclick: () => selectAllProviders(ctl),
-				},
-				[
-					h("span", { class: "dms-vendorName", text: ctl.t.allProviders }),
-					h("span", { class: "dms-vendorMeta", text: String(total) }),
-				],
-			),
+		pushVendor("*", ctl.t.allProviders, String(total), ctl.all, () => selectAllProviders(ctl));
+	}
+
+	for (const provider of hits) {
+		pushVendor(
+			provider.name,
+			provider.name || "—",
+			String(terms.length === 0 ? provider.items.length : provider.matched.length),
+			ctl.provider === provider.name && !ctl.all,
+			() => selectProvider(ctl, provider.name),
 		);
 	}
 
-	ctl.vendors.replaceChildren(...buttons);
+	syncNodes(ctl.vendors, nodes);
+	pruneCache(ctl.cache.vendors, used);
 	showHint(ctl, terms.length > 0 && hits.length === 0 ? ctl.t.noProvider : null);
 	return hits.length;
 }
@@ -744,31 +806,37 @@ function familyGroups(items) {
 
 /**
  * 模型行：点击直接转交给宿主自己的按钮——选择、关菜单、错误提示全走宿主既有逻辑，
- * 我们只负责把它画成右栏的一行。
+ * 我们只负责把它画成右栏的一行。节点按「线路 + 显示名 + 同名序号」复用：
+ * 不同线路里可能有同名模型（中转站很常见），只用显示名当键会让它们互相顶掉。
  * @param {object} ctl 控制器。
  * @param {{ node: Element, label: string, checked: boolean }} item 模型项。
+ * @param {Set<string>} used 本轮用到的键。
+ * @param {string} scope 所属线路名（跨线路视图里用来区分同名模型）。
+ * @param {Map<string, number>} keyCounts 同名计数（同一条线路里也可能重名）。
  * @returns {HTMLElement} 行按钮。
  */
-function modelRow(ctl, item) {
-	return h(
-		"button",
-		{
-			class: `dms-option${item.checked ? " dms-optionOn" : ""}`,
-			type: "button",
+function modelRow(ctl, item, used, scope, keyCounts) {
+	const base = `${scope}\u0000${item.label}`;
+	const nth = keyCounts.get(base) ?? 0;
+	keyCounts.set(base, nth + 1);
+	const key = `model:${base}\u0000${nth}`;
+	used.add(key);
+	return reuseButton(ctl.cache.models, key, {
+		className: `dms-option${item.checked ? " dms-optionOn" : ""}`,
+		parts: ["dms-optionLabel", "dms-optionCheck"],
+		label: item.label,
+		meta: item.checked ? "✓" : "",
+		attrs: {
 			role: "option",
 			"aria-selected": item.checked ? "true" : "false",
 			"aria-label": item.label,
 			title: item.label,
 			"data-dms-model": item.label,
-			onclick: () => {
-				/** @type {HTMLElement} */ (item.node).click();
-			},
 		},
-		[
-			h("span", { class: "dms-optionLabel", text: item.label }),
-			item.checked ? h("span", { class: "dms-optionCheck", text: "✓" }) : null,
-		],
-	);
+		onClick: () => {
+			/** @type {HTMLElement} */ (item.node).click();
+		},
+	});
 }
 
 /**
@@ -779,20 +847,31 @@ function modelRow(ctl, item) {
  * @returns {number} 显示的模型数。
  */
 function renderModelColumn(ctl, view, terms) {
-	const rows = [];
+	const used = new Set();
+	const keyCounts = new Map();
+	const wanted = [];
 	let shown = 0;
 
-	/** 往右栏追加「家族标题 + 该家族的模型」。 */
-	const pushGroup = (title, items) => {
+	/** 往右栏追加「家族标题 + 该家族的模型」。标题每次重建（不持有焦点），模型行复用。 */
+	const pushGroup = (title, items, scope) => {
 		if (items.length === 0) return;
-		rows.push(
+		wanted.push(
 			h("div", { class: "dms-groupHead", "data-dms-grouphead": title }, [
 				h("span", { text: title }),
 				h("span", { class: "dms-groupN", text: String(items.length) }),
 			]),
 		);
-		for (const item of items) rows.push(modelRow(ctl, item));
+		for (const item of items) wanted.push(modelRow(ctl, item, used, scope, keyCounts));
 		shown += items.length;
+	};
+
+	const pushProviderHead = (title, count) => {
+		wanted.push(
+			h("div", { class: "dms-providerHead" }, [
+				h("span", { text: title }),
+				h("span", { class: "dms-groupN", text: String(count) }),
+			]),
+		);
 	};
 
 	if (ctl.all) {
@@ -804,18 +883,16 @@ function renderModelColumn(ctl, view, terms) {
 			);
 			const hit = provider.items.filter((_, index) => matches[index]);
 			if (hit.length === 0) continue;
-			rows.push(
-				h("div", { class: "dms-providerHead" }, [
-					h("span", { text: provider.name || "—" }),
-					h("span", { class: "dms-groupN", text: String(hit.length) }),
-				]),
-			);
-			for (const group of familyGroups(hit)) pushGroup(familyLabel(group.family, ctl.lang), group.items);
+			pushProviderHead(provider.name || "—", hit.length);
+			for (const group of familyGroups(hit)) {
+				pushGroup(familyLabel(group.family, ctl.lang), group.items, provider.name);
+			}
 		}
 	} else {
 		const chosen = view.find((provider) => provider.name === ctl.provider);
 		if (chosen === undefined) {
-			ctl.models.replaceChildren();
+			syncNodes(ctl.models, []);
+			pruneCache(ctl.cache.models, used);
 			ctl.rows = [];
 			ctl.count.textContent = "";
 			return 0;
@@ -825,13 +902,14 @@ function renderModelColumn(ctl, view, terms) {
 			ctl.input.value,
 		);
 		const hit = chosen.items.filter((_, index) => matches[index]);
-		for (const group of familyGroups(hit)) pushGroup(familyLabel(group.family, ctl.lang), group.items);
+		for (const group of familyGroups(hit)) pushGroup(familyLabel(group.family, ctl.lang), group.items, chosen.name);
 		if (hit.length === 0 && terms.length > 0) showHint(ctl, fuzzy ? ctl.t.fuzzy : ctl.t.empty);
 		ctl.count.textContent = format(ctl.t.count, { shown: hit.length, total: chosen.items.length });
 	}
 
-	ctl.models.replaceChildren(...rows);
-	ctl.rows = rows.filter((row) => row.classList.contains("dms-option"));
+	syncNodes(ctl.models, wanted);
+	pruneCache(ctl.cache.models, used);
+	ctl.rows = wanted.filter((node) => node.classList.contains("dms-option"));
 	return shown;
 }
 
@@ -860,17 +938,24 @@ function selectAllProviders(ctl) {
 /**
  * 刷新整个菜单：左栏线路、右栏模型（家族分组）、推理强度能量条、计数。
  *
- * 两条重要约定：
+ * 三条重要约定：
  * 1. 宿主的模型列表**永远**是 `display:none`——右栏是我们按家族重画的一份，
  *    点击时把事件转交给对应宿主按钮，选择逻辑仍然只有一个真相来源。
- * 2. 每次重绘都重读宿主 DOM，所以宿主自己换模型/刷新目录后这里自动跟上。
+ * 2. 两栏的按钮按名字复用节点，绝不整片重建：删掉带焦点的按钮会让宿主以为
+ *    「点到外面了」而关掉整个菜单。
+ * 3. 每次重绘都重读宿主 DOM，所以宿主自己换模型/刷新目录后这里自动跟上。
  * @param {object} ctl 控制器。
  */
 function renderMenu(ctl) {
 	const providers = providerSections(ctl.menu);
 	const terms = parseQuery(ctl.input.value);
-	const container = providers.length > 0 ? providers[0].section.parentElement : null;
+	// 宿主把分组包在一层滚动容器里（`.groups`），收起它就能藏掉整份原始列表。
+	// 但如果哪天的结构变成「分组直接挂在菜单下」，收起它等于把菜单自己藏了——
+	// 那样面板会变成 0 尺寸、连焦点都进不去，所以这种情况退化成逐个藏分组。
+	const parent = providers.length > 0 ? providers[0].section.parentElement : null;
+	const container = parent !== ctl.menu ? parent : null;
 	if (container !== null) setVisible(container, false);
+	else for (const provider of providers) setVisible(provider.section, false);
 
 	const view = providers.map((provider) => {
 		const matched = provider.items.filter((item) => matchesTerms(item.label, terms, false));
@@ -908,7 +993,9 @@ function renderMenu(ctl) {
 		ctl.split.setAttribute("hidden", "hidden");
 		ctl.legacy.removeAttribute("hidden");
 		ctl.input.placeholder = ctl.t.placeholderModels;
-		const rows = [];
+		const used = new Set();
+		const keyCounts = new Map();
+		const wanted = [];
 		let shown = 0;
 		let total = 0;
 		for (const provider of view) {
@@ -919,17 +1006,18 @@ function renderMenu(ctl) {
 			);
 			const hit = provider.items.filter((_, index) => matches[index]);
 			if (hit.length === 0) continue;
-			rows.push(
+			wanted.push(
 				h("div", { class: "dms-providerHead" }, [
 					h("span", { text: provider.name || "—" }),
 					h("span", { class: "dms-groupN", text: String(hit.length) }),
 				]),
 			);
-			for (const item of hit) rows.push(modelRow(ctl, item));
+			for (const item of hit) wanted.push(modelRow(ctl, item, used, provider.name, keyCounts));
 			shown += hit.length;
 		}
-		ctl.legacy.replaceChildren(...rows);
-		ctl.rows = rows.filter((row) => row.classList.contains("dms-option"));
+		syncNodes(ctl.legacy, wanted);
+		pruneCache(ctl.cache.models, used);
+		ctl.rows = wanted.filter((node) => node.classList.contains("dms-option"));
 		ctl.count.textContent = format(ctl.t.count, { shown, total });
 		showHint(ctl, shown === 0 && terms.length > 0 ? ctl.t.empty : null);
 	}
@@ -937,7 +1025,6 @@ function renderMenu(ctl) {
 	ctl.clear.hidden = ctl.input.value.length === 0;
 	renderEffortBar(ctl);
 }
-
 /** 当前可见的候选行。 */
 function visibleRows(ctl) {
 	return candidateRows(ctl.ul).filter((row) => row.style.display !== "none");
@@ -1344,6 +1431,8 @@ function mountMenu(menu, options) {
 		models,
 		split,
 		legacy,
+		/** 按钮节点复用表：保住节点身份就保住了焦点（见 reuseButton）。 */
+		cache: { vendors: new Map(), models: new Map() },
 		effort,
 		/** 模型目录（拿不到就没有能量条）。 */
 		directory: modelDirectory(),
@@ -1412,6 +1501,15 @@ function mountMenu(menu, options) {
 		ctl.unsubscribe = null;
 	}
 
+	// 把菜单尺寸钉死：不同线路的模型名长短、条数都不一样，让盒子跟着内容变长变宽很难看。
+	// （宿主自己没给 style，这一层不归 React 管，卸载时还原。）
+	ctl.menuStyle = {
+		width: menu.style.getPropertyValue("width"),
+		maxHeight: menu.style.getPropertyValue("max-height"),
+	};
+	menu.style.setProperty("width", "min(400px, calc(100vw - 32px))");
+	menu.style.setProperty("max-height", "calc(100vh - 80px)");
+
 	const anchor = menu.firstChild;
 	for (const node of ctl.nodes) menu.insertBefore(node, anchor);
 	rerender();
@@ -1435,6 +1533,11 @@ function unmount(ctl) {
 	try {
 		ctl.unsubscribe?.();
 		ctl.unsubscribe = null;
+		// 还原我们钉上去的尺寸，别把宿主的菜单样式留着改过的样子
+		for (const [name, value] of Object.entries(ctl.menuStyle ?? {})) {
+			if (value === "") ctl.menu.style.removeProperty(name);
+			else ctl.menu.style.setProperty(name, value);
+		}
 		ctl.bar.root.remove();
 		for (const node of ctl.nodes ?? []) node.remove();
 	} catch {

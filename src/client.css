@@ -158,11 +158,10 @@
 	display: flex;
 	align-items: stretch;
 	gap: 4px;
-	/* 菜单本身有 max-height + overflow:hidden，所以这里必须能被压缩：
-	   否则两栏一撑长，下面的推理强度能量条就被裁掉了。 */
-	flex: 1 1 auto;
-	min-height: 96px;
-	max-height: min(320px, 46vh);
+	/* 高度钉死、不跟内容走：否则换一条线路，模型名长短和条数一变，
+	   整个面板就一会儿高一会儿矮。屏幕矮的时候用 vh 兜底。 */
+	flex: none;
+	height: clamp(140px, calc(100vh - 300px), 320px);
 }
 
 .dms-split[hidden] {
@@ -183,10 +182,8 @@
 	flex-direction: column;
 	gap: 2px;
 	flex: 0 0 auto;
-	/* 宽度跟着最长的线路名走（限制在 46% 以内），名字短就不用留一条空栏 */
-	width: max-content;
-	min-width: 78px;
-	max-width: 46%;
+	/* 宽度也钉死：线路名长短不一时左右摇摆比截断更难看（名字过长走省略号 + title） */
+	width: 122px;
 	padding-right: 4px;
 	border-right: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
 }
@@ -320,6 +317,12 @@
 	white-space: nowrap;
 }
 
+/* 右栏宽度固定，长模型名一律省略号 + title，绝不把面板撑开 */
+.dms-models,
+.dms-colRight {
+	overflow-x: hidden;
+}
+
 .dms-optionCheck {
 	flex: none;
 	color: var(--dsw-alias-brand-primary, #4d6bfe);
@@ -330,10 +333,9 @@
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
-	max-height: min(320px, 46vh);
+	height: clamp(140px, calc(100vh - 300px), 320px);
 	overflow-y: auto;
-	flex: 1 1 auto;
-	min-height: 96px;
+	flex: none;
 	--dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
 	--dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }

@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![DSH Plugin](https://img.shields.io/badge/topic-dsh--plugin-0e7490?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![Version](https://img.shields.io/badge/version-1.2.0-green?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.2.1-green?style=flat-square)](package.json)
 
 **简体中文** · [English](README.en.md)
 
@@ -167,15 +167,16 @@ dshModelSearch.reset()                        // 恢复默认
 
 **因此**：如果未来某个 DSH 版本改了这些结构，插件会**静默失效**（不接管），而不会把界面改坏；每个入口都有 `try/catch` 兜底，最多在控制台留一行警告。
 
-开发时的验证目标是 `@deepseek-ai/dsh@0.1.1-rc.2`（DSH Web UI）。真实浏览器 E2E 已经先后抓出三个只有跑起来才会暴露的问题：模型项其实是 `role="menuitemradio"`、自动聚焦的守卫条件写错、能量条被菜单的 `max-height` 裁掉。
+开发时的验证目标是 `@deepseek-ai/dsh@0.1.1-rc.2`（DSH Web UI）。真实浏览器验证先后抓出四个只有跑起来才会暴露的问题：模型项其实是 `role="menuitemradio"`、自动聚焦的守卫条件写错、能量条被菜单的 `max-height` 裁掉、**重绘删掉带焦点的按钮导致宿主以为焦点跑掉而关掉整个菜单**（页内 `element.click()` 不移动焦点，所以只有真鼠标点击才测得出来）。
 
 ## 开发
 
 本仓库零构建依赖：产物 `lib/client.js` 由脚本把 `src/client.js` 套进 DSH 的 `window.__ModuleLoader__.load({ id, factory })` 外壳生成。
 
 ```bash
-npm run build     # src/ → lib/client.js（内联 CSS、校验版本号）
-npm test          # 54 个用例：纯逻辑 + jsdom 真实加载产物跑 DOM 行为 + 假模型目录跑能量条
+npm run build          # src/ → lib/client.js（内联 CSS、校验版本号）
+npm test               # 59 个用例：纯逻辑 + jsdom 真实加载产物跑 DOM 行为 + 假模型目录跑能量条
+npm run check:browser  # 真实 Chrome 自检：**不需要** dsh web 在跑，量尺寸/验焦点行为
 node scripts/e2e-dsh.mjs --screenshot out.png   # 真实浏览器端到端（需要本机跑着 dsh web）
 node scripts/e2e-dsh.mjs --skip-effort          # 不碰推理强度设置的那一轮
 node scripts/e2e-dsh.mjs --set-effort High      # 维护用：把推理强度拖到指定档位
@@ -187,7 +188,9 @@ node scripts/e2e-dsh.mjs --set-effort High      # 维护用：把推理强度拖
 src/client.js        客户端半边源码（工厂体：apply / inject）
 src/client.css       注入的样式（走 DSH 主题变量，浅色/深色都适配）
 scripts/build.mjs    打包脚本（无依赖，只套外壳 + 内联 CSS）
-scripts/e2e-dsh.mjs  无头 Chrome 端到端：弹窗搜索 / 两栏级联 / 能量条拖动
+scripts/e2e-dsh.mjs  无头 Chrome 端到端：弹窗搜索 / 两栏级联 / 能量条拖动（真鼠标事件）
+scripts/browser-check.mjs  真实 Chrome 自检：面板尺寸稳定、真点击不关菜单（不依赖 dsh web）
+test/harness.html    上面那个自检用的页面（内联了宿主菜单的关键布局规则）
 lib/index.js         宿主半边（空壳：只为让浏览器半边被 Loader 发现）
 lib/client.js        构建产物（已提交，装完即用，无需构建）
 test/                node:test 用例（jsdom 夹具 + 假 modelDirectories 服务）

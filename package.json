@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-search",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "给 DeepSeek Harness 的模型列表加上搜索框与两级选择：自定义提供方一次拉回上百个模型时，先选线路、再按 DeepSeek/GPT/其他挑型号，怎么都能秒定位。Search + two-level picker (provider first, then model family) for DeepSeek Harness model lists.",
   "type": "module",
   "main": "lib/index.js",
@@ -16,12 +16,13 @@
     "lib",
     "src",
     "scripts",
+    "test",
     "docs",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
-    "LICENSE",
-    "PUBLISHING.md"
+    "PUBLISHING.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
@@ -35,7 +36,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test",
-    "check": "npm run build && npm test"
+    "check:browser": "node scripts/browser-check.mjs",
+    "check": "npm run build && npm test && npm run check:browser"
   },
   "keywords": [
     "deepseek-harness",

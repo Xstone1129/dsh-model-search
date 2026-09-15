@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>dsh-model-search · 浏览器布局/交互自检</title>
+<!-- 这里内联的是宿主菜单的关键布局规则（从 dsh-client-ui-model-selection 的构建产物里抄的），
+     目的是在没有跑 dsh web 的机器上也能用真实浏览器量尺寸、验焦点行为。 -->
+<style>
+  body { margin: 0; height: 100vh; background: #101014; color: #eee; font: 14px/1.4 system-ui, sans-serif; }
+  .anchor { position: fixed; right: 24px; bottom: 24px; }
+  .root { min-width: 0; position: relative; }
+  .trigger { height: 28px; padding: 0 10px; border-radius: 24px; border: 1px solid #444; background: #1b1b20; color: #ddd; }
+  /* ↓ 宿主菜单的真实规则 */
+  .menu {
+    z-index: 20; border: 1px solid #3a3a44; background: #1c1c22; width: max-content;
+    min-width: min(240px, 100vw - 32px); max-width: min(420px, 100vw - 32px);
+    max-height: min(360px, 100vh - 96px); box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    border-radius: 12px; flex-direction: column; padding: 4px; display: flex;
+    position: absolute; bottom: calc(100% + 8px); right: 0; overflow: hidden;
+  }
+  .groups { min-height: 0; overflow-y: auto; }
+  .groupTitle { position: sticky; top: 0; background: #1c1c22; color: #888; padding: 5px 8px 3px; font-size: 12px; }
+  .cell { box-sizing: border-box; width: auto; min-width: 100%; height: 40px; color: #eee; cursor: pointer;
+    text-align: left; background: 0 0; border: none; border-radius: 10px; align-items: center; gap: 8px;
+    padding: 0 10px; font-size: 14px; display: flex; }
+  .cell:hover { background: rgba(255,255,255,.08); }
+  .optionCopy { display: flex; gap: 6px; }
+</style>
+<link rel="stylesheet" href="../src/client.css">
+</head>
+<body>
+<div class="anchor">
+  <div class="root" id="root">
+    <button class="trigger" id="trigger" aria-haspopup="menu" aria-expanded="false">选择模型</button>
+  </div>
+</div>
+<script>
+// 忠实复刻宿主的两条关菜单逻辑：focusout 出界、mousedown 在菜单外。
+window.__host = {
+  open: false,
+  closed: 0,
+  menu: null,
+  root: document.getElementById("root"),
+  trigger: document.getElementById("trigger"),
+  openMenu() {
+    if (this.open) return;
+    this.open = true;
+    this.menu = document.createElement("div");
+    this.menu.className = "menu";
+    this.menu.setAttribute("role", "menu");
+    this.menu.setAttribute("aria-label", "模型与推理等级");
+    this.menu.innerHTML = '<div class="groups">' + window.__fixture() + '</div>';
+    this.root.append(this.menu);
+    this.menu.addEventListener("focusout", (event) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && this.menu.contains(next)) return;
+      this.close();
+    });
+    document.addEventListener("mousedown", (event) => {
+      if (!this.root.contains(event.target)) this.close();
+    }, true);
+  },
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    this.closed += 1;
+    this.menu?.remove();
+    this.menu = null;
+  },
+};
+document.getElementById("trigger").addEventListener("click", () => window.__host.openMenu());
+
+// 夹具：三条线路，名字长短差别很大、模型条数也不一样（正是用户说的「一会儿长一会儿宽」）
+window.__fixture = () => {
+  const groups = [
+    { name: "DeepSeek", models: ["DeepSeek-V4-Flash", "DeepSeek-V4-Pro"] },
+    { name: "lingsuan", models: ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro", "glm-5.3-flash", "qwen3.8-flash", "gpt-5.5", "claude-sonnet-4.5", "MiniMax-M2.7"] },
+    { name: "chatanywhere-with-a-very-long-name", models: ["gpt-5.5", "gpt-5-nano", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra", "deepseek-v4-pro", "deepseek-v4-flash", "o3-mini", "o4-mini", "llama-3.3-70b-instruct", "mistral-large", "gemini-2.5-pro"] },
+  ];
+  return groups.map((group) => `
+    <section role="group" aria-labelledby="t-${group.name}">
+      <div class="groupTitle" id="t-${group.name}" style="background:#1c1c22">${group.name}</div>
+      ${group.models.map((model) => `<button type="button" role="menuitemradio" aria-checked="false" title="${model}" class="cell"><span class="optionCopy"><span class="modelName">${model}</span></span></button>`).join("")}
+    </section>`).join("");
+};
+</script>
+<script>
+window.__ModuleLoader__ = { load(registration) { window.__registration = registration; } };
+</script>
+<script src="../lib/client.js"></script>
+<script>
+(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const results = [];
+  const check = (name, ok, detail) => results.push({ name, ok, detail });
+  const box = (node) => { const r = node.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
+
+  const exports = window.__registration.factory(() => { throw new Error("no externals"); });
+  exports.apply({ effect: (fn) => { fn(); return () => {}; }, get: () => undefined });
+
+  // 打开宿主的菜单
+  window.__host.trigger.click();
+  await sleep(120);
+  const menu = window.__host.menu;
+  check("菜单仍开着", window.__host.open && menu !== null, "closed=" + window.__host.closed);
+  check("两栏已接管", menu.querySelector("[data-dms-split]") !== null, "");
+  check("宿主列表被收起", (() => { const host = menu.querySelector('section[role="group"]')?.parentElement; return host !== undefined && host !== null && host.style.display === "none"; })(), "");
+
+  // ① 尺寸稳定性：在三条线路上来回切，菜单外框尺寸必须一模一样
+  const sizes = [];
+  const vendors = () => Array.from(menu.querySelectorAll("[data-dms-vendors] .dms-vendor"));
+  for (const index of [1, 2, 0, 2, 1]) {
+    const button = vendors()[index];
+    button.focus();
+    button.click();
+    await sleep(60);
+    const rect = menu.getBoundingClientRect();
+    sizes.push({ index, w: Math.round(rect.width), h: Math.round(rect.height), left: Math.round(rect.left) });
+  }
+  const widths = new Set(sizes.map((s) => s.w));
+  const heights = new Set(sizes.map((s) => s.h));
+  const lefts = new Set(sizes.map((s) => s.left));
+  check("切换线路时宽度不变", widths.size === 1, JSON.stringify(sizes) + " → 宽度集合 " + [...widths].join("/"));
+  check("切换线路时高度不变", heights.size === 1, "高度集合 " + [...heights].join("/"));
+  check("右边缘不漂移", lefts.size === 1, "left 集合 " + [...lefts].join("/"));
+
+  // ② 真鼠标点击（mousedown 会给焦点）不能让菜单被关掉
+  const before = window.__host.closed;
+  const target = vendors()[2];
+  const tRect = target.getBoundingClientRect();
+  const opts = { bubbles: true, cancelable: true, clientX: tRect.left + tRect.width / 2, clientY: tRect.top + tRect.height / 2, pointerId: 1, isPrimary: true };
+  target.dispatchEvent(new PointerEvent("pointerdown", opts));
+  target.dispatchEvent(new MouseEvent("mousedown", opts));
+  target.focus();                       // 浏览器在 mousedown 后会把焦点交给按钮
+  target.dispatchEvent(new PointerEvent("pointerup", opts));
+  target.dispatchEvent(new MouseEvent("mouseup", opts));
+  target.dispatchEvent(new MouseEvent("click", opts));
+  await sleep(120);
+  check("真鼠标点线路后菜单没被关掉", window.__host.open === true && window.__host.closed === before, "closed 次数 " + before + " → " + window.__host.closed);
+  check("焦点还在被点的按钮上", document.activeElement === vendors()[2], "activeElement=" + (document.activeElement?.className ?? "?"));
+
+  // ③ 长模型名不能把面板撑开
+  const longName = menu.querySelectorAll("[data-dms-models] .dms-optionLabel");
+  const overflowed = Array.from(longName).some((n) => n.scrollWidth > n.clientWidth + 1);
+  check("长模型名走省略号（面板没被撑开）", box(menu).w <= 480, "宽 " + box(menu).w + "px；有截断=" + overflowed);
+
+  // ④ 能量条还在（这里没有真服务，应当安静缺席，且不报错）
+  const effort = menu.querySelector("[data-dms-effort]");
+  check("没有模型目录服务时能量条安静缺席", effort !== null && effort.hasAttribute("hidden"), "");
+
+  window.__results = results;
+  window.__done = true;
+})();
+</script>
+</body>
+</html>

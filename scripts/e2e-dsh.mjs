@@ -240,6 +240,9 @@ const driverFor = (PROVIDER, FINAL_QUERY) => String.raw`(async () => {
 
   const visible = () => rows.filter((li) => li.style.display !== "none").map((li) => textOf(li));
   const input = bar.querySelector(".dms-input");
+  note("自动聚焦", document.activeElement === input
+    ? "✅ 打开弹窗后焦点已在搜索框，可直接打字"
+    : "焦点在 " + (document.activeElement?.tagName ?? "?") + "（按设计不抢输入框焦点）");
   const type = (value) => { input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); };
   const count = () => textOf(bar.querySelector(".dms-count"));
 

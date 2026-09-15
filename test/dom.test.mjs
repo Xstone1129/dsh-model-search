@@ -31,6 +31,29 @@ test("弹窗：挂上搜索框，插在候选列表之前且不破坏宿主节�
   env.dispose();
 });
 
+test("弹窗：autoFocus 打开即聚焦搜索框（且不抢正在打字的输入框）", async () => {
+  // 默认选项 autoFocus = true；模拟「点了获取按钮后弹窗打开，焦点还停在按钮上」
+  const env = boot({ html: dialogHtml() });
+  env.document.body.insertAdjacentHTML("beforeend", '<button id="trigger">获取可用模型</button>');
+  env.document.getElementById("trigger").focus();
+  env.exports.apply(env.ctx);
+
+  const input = env.document.querySelector('[data-dms-bar="dialog"] .dms-input');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(env.document.activeElement, input, "打开弹窗后焦点应落到搜索框，可以直接打字");
+
+  // 反过来：如果用户正在别的输入框里打字，就不该被抢走
+  const env2 = boot({ html: dialogHtml() });
+  env2.document.body.insertAdjacentHTML("beforeend", '<input id="typing" type="text">');
+  env2.document.getElementById("typing").focus();
+  env2.exports.apply(env2.ctx);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(env2.document.activeElement.id, "typing", "用户正在打的输入框不该被抢焦点");
+
+  env.dispose();
+  env2.dispose();
+});
+
 test("弹窗：默认显示全部，计数正确", () => {
   const env = withDialog();
   assert.equal(visibleTexts(env.ul).length, MODELS.length);

@@ -54,12 +54,14 @@ npm 装法的好处是别人可以 `dsh plugin --profile web add dsh-model-casca
 
 1. 注册/登录 <https://www.npmjs.com>（需要邮箱验证）；
 2. 打开 <https://www.npmjs.com/settings/~/tokens>；
-3. **Generate New Token** → 选 **Granular Access Token**：
-   - Name：`dsh-model-cascade-publish`
-   - Expiration：7 天（发完就撤销，够用）
-   - Permissions：**Read and write**
-   - Packages and scopes：选 **All packages**，或只勾这个包名
+3. **Generate New Token**：
+   - 推荐 **Automation** 类型（专供 CI/脚本发布，**可跳过两步验证**），Name 填 `dsh-model-cascade-publish`；
+   - 想更细就选 **Granular Access Token**：Expiration 7 天、Permissions **Read and write**、
+     Packages and scopes 勾这个包名或 All packages。
 4. 生成的 token 形如 `npm_xxxxxxxx...`，**只显示一次**，复制下来。
+
+> 网页上登录 npmjs.com 只是浏览器里的会话，**CLI 发布不认**：本机 `~/.npmrc` 里必须有
+> token（`npm login` 生成）或直接写入 `//registry.npmjs.org/:_authToken=<token>`。
 
 ### 2. 发布
 

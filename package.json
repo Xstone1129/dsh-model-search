@@ -1,0 +1,68 @@
+{
+  "name": "dsh-model-search",
+  "version": "1.0.0",
+  "description": "给 DeepSeek Harness 的模型列表加上搜索框：自定义提供方一次拉回上百个模型时，也能秒定位要勾的那个。Adds a search box to DeepSeek Harness model lists — the \"fetch models\" dialog and the composer model menu.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "scripts",
+    "docs",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "npm run build && npm test"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "dsh-plugin-search",
+    "model-search",
+    "model-filter",
+    "models",
+    "llm",
+    "ui",
+    "web",
+    "search"
+  ],
+  "license": "MIT",
+  "author": "Xstone1129",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xstone1129/dsh-model-search.git"
+  },
+  "homepage": "https://github.com/Xstone1129/dsh-model-search",
+  "bugs": {
+    "url": "https://github.com/Xstone1129/dsh-model-search/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0"
+  }
+}

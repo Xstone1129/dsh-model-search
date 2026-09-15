@@ -1,0 +1,8 @@
+# dsh-model-search 的 bundle patch 层。
+#
+# 通过 `dsh plugin --profile web add <本包>` 安装时，dsh 的包管理器会把本包加入
+# profile 的 `dsh.profile.bundles`，这一层随即被应用：把插件自己的 Loader 条目
+# 插进插件树。条目名必须与包名一致——浏览器半边的模块 id 就是它。
+- insert:
+    - id: dsh-model-search
+      name: 'dsh-model-search'

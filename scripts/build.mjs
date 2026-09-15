@@ -23,6 +23,12 @@ if (declared !== pkg.version) {
   throw new Error(`build: 版本不一致 —— src/client.js 是 ${declared}，package.json 是 ${pkg.version}`);
 }
 
+// 包名必须等于客户端模块 id：Loader 条目的名字就是包名，浏览器半边按同一个 id 注册自己。
+const declaredName = /exports\.name = "([^"]+)"/.exec(source)?.[1];
+if (declaredName !== pkg.name) {
+  throw new Error(`build: 包名不一致 —— src/client.js 是 ${declaredName}，package.json 是 ${pkg.name}`);
+}
+
 const banner = `/**
  * ${pkg.name} v${pkg.version} — browser half (generated).
  *

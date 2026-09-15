@@ -11,7 +11,7 @@ const FLASHES = ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "qwen3-cod
 /** 起一个世界 + 弹窗夹具，并跑一遍 apply。 */
 function withDialog({ models = MODELS, lang = "zh", options } = {}) {
   const env = boot({ html: dialogHtml(models, { lang }) });
-  env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ autoFocus: false, ...options }));
+  env.window.localStorage.setItem("dsh-model-cascade:options", JSON.stringify({ autoFocus: false, ...options }));
   env.exports.apply(env.ctx);
   const ul = env.document.querySelector("ul");
   const bar = env.document.querySelector('[data-dms-bar="dialog"]');
@@ -224,7 +224,7 @@ function withMenu(groups = PROVIDERS, options = {}, { markChecked = null, html =
     const buttons = Array.from(section.querySelectorAll('button[role="menuitemradio"]'));
     buttons[markChecked.index ?? 0].setAttribute("aria-checked", "true");
   }
-  env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ autoFocus: false, ...options }));
+  env.window.localStorage.setItem("dsh-model-cascade:options", JSON.stringify({ autoFocus: false, ...options }));
   env.exports.apply(env.ctx);
   const menu = env.document.querySelector('div[role="menu"]');
   // 复刻宿主的 onBlur：焦点一旦落到菜单外面，它就把整个菜单关掉。
@@ -514,7 +514,7 @@ test("菜单：模型少于 minItems 时完全不介入", () => {
 
 test("菜单：宿主刚插入菜单的同一批微任务里就被接管（用户看不到原始列表）", async () => {
   const env = boot();
-  env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ autoFocus: false }));
+  env.window.localStorage.setItem("dsh-model-cascade:options", JSON.stringify({ autoFocus: false }));
   env.exports.apply(env.ctx);
   assert.equal(env.document.querySelector("div[role=menu]"), null);
 
@@ -532,13 +532,14 @@ test("菜单：宿主刚插入菜单的同一批微任务里就被接管（用�
 test("控制台开关：dshModelSearch.set({ dialog: false }) 立即生效", () => {
   const env = withDialog();
   assert.ok(env.document.querySelector('[data-dms-bar="dialog"]'));
-  assert.equal(typeof env.window.dshModelSearch.set, "function");
+  assert.equal(typeof env.window.dshModelCascade.set, "function");
+  assert.equal(env.window.dshModelSearch, env.window.dshModelCascade, "改名前的 dshModelSearch 仍指向同一个开关");
 
-  env.window.dshModelSearch.set({ dialog: false });
+  env.window.dshModelCascade.set({ dialog: false });
   assert.equal(env.document.querySelector('[data-dms-bar="dialog"]'), null);
-  assert.equal(JSON.parse(env.window.localStorage.getItem("dsh-model-search:options")).dialog, false);
+  assert.equal(JSON.parse(env.window.localStorage.getItem("dsh-model-cascade:options")).dialog, false);
 
-  env.window.dshModelSearch.reset();
+  env.window.dshModelCascade.reset();
   assert.ok(env.document.querySelector('[data-dms-bar="dialog"]'), "恢复默认后搜索框应回来");
   env.dispose();
 });
@@ -549,16 +550,39 @@ test("卸载：ctx 释放后搜索框、控制台开关与观察器一起撤走"
 
   env.dispose();
   assert.equal(env.document.querySelector('[data-dms-bar="dialog"]'), null);
-  assert.equal(env.window.dshModelSearch, undefined, "控制台开关应随插件卸载一起消失");
+  assert.equal(env.window.dshModelCascade, undefined, "控制台开关应随插件卸载一起消失");
+  assert.equal(env.window.dshModelSearch, undefined, "旧名字也要一起清掉");
   assert.equal(env.internals.mounted.size, 0, "不能留下悬挂的控制器");
+});
+
+test("选项：从 dsh-model-search 改名前的老键能读出来并跟着迁移", () => {
+  const env = boot({ html: dialogHtml() });
+  // 老键里存着用户的设置（新键不存在）
+  env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ minItems: 3, lang: "en" }));
+  env.exports.apply(env.ctx);
+
+  const options = env.window.dshModelCascade.options;
+  assert.equal(options.minItems, 3, "老配置必须被读到");
+  assert.equal(options.lang, "en");
+
+  // 一旦写过一次，就落到新键上
+  env.window.dshModelCascade.set({ dialog: true });
+  assert.equal(JSON.parse(env.window.localStorage.getItem("dsh-model-cascade:options")).minItems, 3);
+
+  const fresh = boot({ html: dialogHtml() });
+  fresh.window.localStorage.setItem("dsh-model-cascade:options", JSON.stringify({ minItems: 5 }));
+  fresh.exports.apply(fresh.ctx);
+  assert.equal(fresh.window.dshModelCascade.options.minItems, 5, "新键优先");
+  env.dispose();
+  fresh.dispose();
 });
 
 test("样式：只注入一次，并带上插件标识", () => {
   const env = withDialog();
   env.exports.apply(env.ctx);
-  const tags = env.document.querySelectorAll('style[data-plugin="dsh-model-search"]');
+  const tags = env.document.querySelectorAll('style[data-plugin="dsh-model-cascade"]');
   assert.equal(tags.length, 1);
-  assert.equal(tags[0].dataset.pluginCss, "dsh-model-search/styles.css");
+  assert.equal(tags[0].dataset.pluginCss, "dsh-model-cascade/styles.css");
   assert.ok(tags[0].textContent.includes(".dms-input"));
   env.dispose();
 });

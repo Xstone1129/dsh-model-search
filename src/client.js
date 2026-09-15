@@ -1,5 +1,5 @@
 /**
- * dsh-model-search — browser half.
+ * dsh-model-cascade — browser half.
  *
  * DeepSeek Harness 的模型列表搜索增强：给「获取模型列表」对话框和输入框旁的
  * 模型菜单加上搜索框，让上百个模型也能秒定位。
@@ -20,13 +20,16 @@
  */
 
 /** 插件版本（与 package.json 保持一致，构建时校验）。 */
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 
 /** 注入样式的标签标识，避免重复注入。 */
-const STYLE_TAG_ID = "dsh-model-search/styles.css";
+const STYLE_TAG_ID = "dsh-model-cascade/styles.css";
 
 /** 选项在 localStorage 中的键名。 */
-const OPTIONS_KEY = "dsh-model-search:options";
+const OPTIONS_KEY = "dsh-model-cascade:options";
+
+/** 改名前（dsh-model-search）的键名：只读一次用于迁移。 */
+const LEGACY_OPTIONS_KEY = "dsh-model-search:options";
 
 /** 默认选项。 */
 const DEFAULT_OPTIONS = {
@@ -230,9 +233,17 @@ function format(text, params) {
 /** 读取选项：非法或损坏的存储值一律回退默认，绝不让插件因为坏配置失效。 */
 function readOptions() {
 	const base = { ...DEFAULT_OPTIONS };
+	let raw = null;
+	try {
+		raw = window.localStorage.getItem(OPTIONS_KEY);
+		// 从 dsh-model-search 改名过来：老配置读一次就迁移，别让用户的设置凭空消失。
+		if (raw === null) raw = window.localStorage.getItem(LEGACY_OPTIONS_KEY);
+	} catch {
+		return base;
+	}
 	let stored;
 	try {
-		stored = JSON.parse(String(window.localStorage.getItem(OPTIONS_KEY) ?? ""));
+		stored = JSON.parse(String(raw ?? ""));
 	} catch {
 		return base;
 	}
@@ -1662,7 +1673,7 @@ function schedule() {
 			scan();
 		} catch (error) {
 			// 增强层永远不能影响宿主：出问题就退场，控制台留痕。
-			console.warn("[dsh-model-search] scan failed", error);
+			console.warn("[dsh-model-cascade] scan failed", error);
 		}
 	}, 80);
 }
@@ -1672,7 +1683,7 @@ function onMutations(records) {
 	try {
 		takeoverNow(records);
 	} catch (error) {
-		console.warn("[dsh-model-search] takeover failed", error);
+		console.warn("[dsh-model-cascade] takeover failed", error);
 	}
 	schedule();
 }
@@ -1716,7 +1727,9 @@ function apply(ctx) {
 		/** 手动扫一遍（调试用）。 */
 		scan,
 	};
-	// 控制台开关：`dshModelSearch.set({ minItems: 1 })` 等。
+	// 控制台开关：`dshModelCascade.set({ minItems: 1 })` 等。
+	globalThis.dshModelCascade = consoleApi;
+	// 改名前的名字：保留一段时间，省得按旧文档敲的人一脸问号。
 	globalThis.dshModelSearch = consoleApi;
 
 	const start = () => {
@@ -1726,7 +1739,7 @@ function apply(ctx) {
 	};
 	start();
 	state.apply = start;
-	console.info(`[dsh-model-search] v${VERSION} 已启用（模型列表搜索增强）`);
+	console.info(`[dsh-model-cascade] v${VERSION} 已启用（模型列表搜索 + 两级选择 + 推理强度能量条）`);
 
 	ctx.effect(() => () => {
 		state.observer?.disconnect();
@@ -1738,15 +1751,16 @@ function apply(ctx) {
 		for (const [, ctl] of mounted) unmount(ctl);
 		mounted.clear();
 		state.ctx = null;
+		delete globalThis.dshModelCascade;
 		delete globalThis.dshModelSearch;
-	}, "dsh-model-search: dom observer");
+	}, "dsh-model-cascade: dom observer");
 }
 
 /** 注入样式（同名标签只注入一次，热重载时由 client-modules 负责回收）。 */
 function injectStyles() {
 	if (document.querySelector(`style[data-plugin-css=${JSON.stringify(STYLE_TAG_ID)}]`) !== null) return;
 	const tag = document.createElement("style");
-	tag.dataset.plugin = "dsh-model-search";
+	tag.dataset.plugin = "dsh-model-cascade";
 	tag.dataset.pluginCss = STYLE_TAG_ID;
 	tag.textContent = STYLES;
 	document.head.append(tag);
@@ -1754,7 +1768,7 @@ function injectStyles() {
 
 exports.apply = apply;
 exports.inject = [];
-exports.name = "dsh-model-search";
+exports.name = "dsh-model-cascade";
 // 单元测试与调试用的内部面（浏览器里也能 `require("@deepseek-ai/...")` 之外的方式拿到）。
 exports.__internals = {
 	VERSION,

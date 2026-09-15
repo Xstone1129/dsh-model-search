@@ -11,14 +11,14 @@
 
 打开 <https://github.com/new>：
 
-- Repository name：`dsh-model-search`
+- Repository name：`dsh-model-cascade`
 - 可见性随意（Public 才能被插件目录收录）
 - **不要**勾选 Add a README / .gitignore / license（本地已经有内容了）
 
 ### 2. 推送
 
 ```bash
-cd ~/xstone/dsh-model-search
+cd ~/xstone/dsh-model-cascade
 git remote add origin git@github.com:Xstone1129/dsh-model-search.git   # 只需一次
 git push -u origin main
 ```
@@ -47,7 +47,7 @@ gh repo edit Xstone1129/dsh-model-search --add-topic dsh-plugin --add-topic deep
 
 ## 二、发布到 npm（可选）
 
-npm 装法的好处是别人可以 `dsh plugin --profile web add dsh-model-search`（不用写 GitHub 地址）。
+npm 装法的好处是别人可以 `dsh plugin --profile web add dsh-model-cascade`（不用写 GitHub 地址）。
 不发布也完全能用——README 里给的是 `github:Xstone1129/dsh-model-search` 安装法。
 
 ### 1. 拿一个 npm token
@@ -55,7 +55,7 @@ npm 装法的好处是别人可以 `dsh plugin --profile web add dsh-model-searc
 1. 注册/登录 <https://www.npmjs.com>（需要邮箱验证）；
 2. 打开 <https://www.npmjs.com/settings/~/tokens>；
 3. **Generate New Token** → 选 **Granular Access Token**：
-   - Name：`dsh-model-search-publish`
+   - Name：`dsh-model-cascade-publish`
    - Expiration：7 天（发完就撤销，够用）
    - Permissions：**Read and write**
    - Packages and scopes：选 **All packages**，或只勾这个包名
@@ -64,7 +64,7 @@ npm 装法的好处是别人可以 `dsh plugin --profile web add dsh-model-searc
 ### 2. 发布
 
 ```bash
-cd ~/xstone/dsh-model-search
+cd ~/xstone/dsh-model-cascade
 npm pack --dry-run        # 先看一眼清单：应包含 lib/ src/ scripts/ docs/ cordis.patch.yml README LICENSE
 npm publish --access public
 ```

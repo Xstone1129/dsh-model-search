@@ -1,6 +1,6 @@
 <div align="center">
 
-# dsh-model-search
+# dsh-model-cascade
 
 **A two-level model picker (provider → model) and a Codex-style draggable reasoning-effort bar for DeepSeek Harness**
 
@@ -8,7 +8,7 @@ A hundred models? Pick the route on the left, the model on the right — grouped
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![DSH Plugin](https://img.shields.io/badge/topic-dsh--plugin-0e7490?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![Version](https://img.shields.io/badge/version-1.2.1-green?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.3.0-green?style=flat-square)](package.json)
 
 [简体中文](README.md) · **English**
 
@@ -87,23 +87,31 @@ Both screenshots come from a real, locally running DSH instance (produced by
 ```bash
 # Install from GitHub (no build step: the bundle is committed)
 dsh plugin --profile web add github:Xstone1129/dsh-model-search
+
+# …or from npm (the package is named dsh-model-cascade; the GitHub repo keeps dsh-model-search)
+dsh plugin --profile web add dsh-model-cascade
 ```
 
 Then **reload the page**; restart `dsh web` if it does not take effect.
+
+> Naming: the GitHub repo is `dsh-model-search`, but that npm name was already taken by
+> a similar community plugin, so the npm package is published as **`dsh-model-cascade`**
+> (after its defining feature, the two-level cascade). A DSH plugin's package name must
+> equal its client module id, so both are `dsh-model-cascade`.
 
 **Option 2 — manual (no restart, handy for local hacking)**
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add file:/path/to/dsh-model-search
+pnpm add file:/path/to/this-checkout
 ```
 
 and add the entry to that profile's `cordis.patch.yml` (the file is watched live):
 
 ```yaml
 - insert:
-    - id: dsh-model-search
-      name: 'dsh-model-search'
+    - id: dsh-model-cascade
+      name: 'dsh-model-cascade'
 ```
 
 Reload the page — no `dsh web` restart needed.
@@ -121,16 +129,16 @@ Nothing to configure:
 
 ## Options
 
-From the browser console, via `dshModelSearch` (persisted in `localStorage`):
+From the browser console, via `dshModelCascade` (persisted in `localStorage`):
 
 ```js
-dshModelSearch.options                        // current options
-dshModelSearch.set({ drilldown: false })      // no cascade: one flat list + search
-dshModelSearch.set({ openToModels: false })   // keep the host's root pane when opening
-dshModelSearch.set({ minItems: 3 })           // take over from 3 models on
-dshModelSearch.set({ menu: false })           // dialog only, leave the model menu alone
-dshModelSearch.set({ lang: 'en' })            // force English copy (default 'auto')
-dshModelSearch.reset()                        // back to defaults
+dshModelCascade.options                        // current options
+dshModelCascade.set({ drilldown: false })      // no cascade: one flat list + search
+dshModelCascade.set({ openToModels: false })   // keep the host's root pane when opening
+dshModelCascade.set({ minItems: 3 })           // take over from 3 models on
+dshModelCascade.set({ menu: false })           // dialog only, leave the model menu alone
+dshModelCascade.set({ lang: 'en' })            // force English copy (default 'auto')
+dshModelCascade.reset()                        // back to defaults
 ```
 
 | Option | Default | Meaning |
@@ -143,7 +151,9 @@ dshModelSearch.reset()                        // back to defaults
 | `autoFocus` | `true` | Focus the dialog search box on open |
 | `lang` | `'auto'` | Copy language: `auto` / `zh` / `en` |
 
-Storage key: `localStorage["dsh-model-search:options"]`.
+Storage key: `localStorage["dsh-model-cascade:options"]` (the pre-rename key
+`dsh-model-search:options` is read once for migration, so existing settings survive);
+the old console name `dshModelSearch` remains as an alias to the same switch.
 
 ### Keyboard
 
@@ -197,7 +207,7 @@ This repo has zero build dependencies: `lib/client.js` is produced by wrapping
 
 ```bash
 npm run build          # src/ → lib/client.js (inlines CSS, checks the version)
-npm test               # 59 cases: pure logic + the real artifact in jsdom + a fake model directory
+npm test               # 60 cases: pure logic + the real artifact in jsdom + a fake model directory
 npm run check:browser  # real-Chrome checks (layout/focus); does NOT need dsh web running
 node scripts/e2e-dsh.mjs --screenshot out.png   # real-browser E2E (needs a running dsh web)
 node scripts/e2e-dsh.mjs --skip-effort          # the run that leaves your settings alone

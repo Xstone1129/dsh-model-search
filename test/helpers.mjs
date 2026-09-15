@@ -13,6 +13,8 @@ import { JSDOM, VirtualConsole } from "jsdom";
 import assert from "node:assert/strict";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** 包名等元数据：模块 id 必须等于包名，所以从 package.json 读，别在测试里写死。 */
+export const PACKAGE = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 /** 构建产物：由 `npm run build` 从 src/ 生成。 */
 export const CODE = readFileSync(join(root, "lib/client.js"), "utf8");
 
@@ -65,7 +67,7 @@ export function boot({ html = "", lang = "zh-CN" } = {}) {
   };
   window.eval(CODE);
   assert.ok(registration !== undefined, "客户端产物必须通过 __ModuleLoader__.load 注册自己");
-  assert.equal(registration.id, "dsh-model-search", "注册的模块 id 必须与包名一致（loader 条目名）");
+  assert.equal(registration.id, PACKAGE.name, "注册的模块 id 必须与包名一致（loader 条目名）");
 
   const exports = registration.factory((specifier) => {
     throw new Error(`客户端插件不应 require 外部模块，却请求了 ${specifier}`);

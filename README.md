@@ -1,6 +1,6 @@
 <div align="center">
 
-# dsh-model-search
+# dsh-model-cascade
 
 **把 DSH 的模型选择改成「先选线路、再选模型」，还带一条 Codex 式推理强度能量条**
 
@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![DSH Plugin](https://img.shields.io/badge/topic-dsh--plugin-0e7490?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![Version](https://img.shields.io/badge/version-1.2.1-green?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.3.0-green?style=flat-square)](package.json)
 
 **简体中文** · [English](README.en.md)
 
@@ -82,24 +82,32 @@
 ```bash
 # 从 GitHub 安装（无需构建：产物已随仓库提交）
 dsh plugin --profile web add github:Xstone1129/dsh-model-search
+
+# 或从 npm 安装（包名是 dsh-model-cascade；GitHub 仓库名仍是 dsh-model-search）
+dsh plugin --profile web add dsh-model-cascade
 ```
 
 装完**刷新页面**；若没生效，重启 `dsh web`。
+
+> 包名说明：GitHub 仓库叫 `dsh-model-search`，但 npm 上那个包名三周前已被另一位开发者的
+> 同题材插件占用，所以发到 npm 时改叫 **`dsh-model-cascade`**（直指本插件最核心的
+> 「两级级联」）。仓库里 `package.json` 的 `name` 与插件在 DSH 里的模块 id 必须一致，
+> 因此两者统一为 `dsh-model-cascade`。
 
 **方式二：手动（免重启，适合本机折腾）**
 
 ```bash
 # 1. 放进 profile 的依赖里
 cd ~/.dsh/profiles/web
-pnpm add file:/path/to/dsh-model-search
+pnpm add file:/path/to/this-checkout
 
 # 2. 在该 profile 的 cordis.patch.yml 里插入插件条目（这个文件是热监听的，改完立即生效）
 ```
 
 ```yaml
 - insert:
-    - id: dsh-model-search
-      name: 'dsh-model-search'
+    - id: dsh-model-cascade
+      name: 'dsh-model-cascade'
 ```
 
 改完刷新页面即可，不用重启 `dsh web`。
@@ -116,16 +124,16 @@ pnpm add file:/path/to/dsh-model-search
 
 ## 选项
 
-浏览器控制台里用 `dshModelSearch` 随时调整（写入 `localStorage`，刷新后保留）：
+浏览器控制台里用 `dshModelCascade` 随时调整（写入 `localStorage`，刷新后保留）：
 
 ```js
-dshModelSearch.options                        // 看当前选项
-dshModelSearch.set({ drilldown: false })      // 不要两级选择，回到一屏列表 + 搜索
-dshModelSearch.set({ openToModels: false })   // 打开菜单仍停在「模型 / 推理等级」根面板
-dshModelSearch.set({ minItems: 3 })           // 模型少到 3 条也接管
-dshModelSearch.set({ menu: false })           // 只保留弹窗搜索，不动模型菜单
-dshModelSearch.set({ lang: 'en' })            // 强制英文文案（默认 auto：跟着界面走）
-dshModelSearch.reset()                        // 恢复默认
+dshModelCascade.options                        // 看当前选项
+dshModelCascade.set({ drilldown: false })      // 不要两级选择，回到一屏列表 + 搜索
+dshModelCascade.set({ openToModels: false })   // 打开菜单仍停在「模型 / 推理等级」根面板
+dshModelCascade.set({ minItems: 3 })           // 模型少到 3 条也接管
+dshModelCascade.set({ menu: false })           // 只保留弹窗搜索，不动模型菜单
+dshModelCascade.set({ lang: 'en' })            // 强制英文文案（默认 auto：跟着界面走）
+dshModelCascade.reset()                        // 恢复默认
 ```
 
 | 选项 | 默认 | 说明 |
@@ -138,7 +146,9 @@ dshModelSearch.reset()                        // 恢复默认
 | `autoFocus` | `true` | 弹窗打开时自动聚焦搜索框 |
 | `lang` | `'auto'` | 文案语言：`auto` / `zh` / `en` |
 
-存储键：`localStorage["dsh-model-search:options"]`。
+存储键：`localStorage["dsh-model-cascade:options"]`（改名前的老键
+`dsh-model-search:options` 会被读取一次做迁移，老设置不会丢）；
+旧的控制台名 `dshModelSearch` 仍作为别名指向同一个开关。
 
 ### 键盘
 
@@ -175,7 +185,7 @@ dshModelSearch.reset()                        // 恢复默认
 
 ```bash
 npm run build          # src/ → lib/client.js（内联 CSS、校验版本号）
-npm test               # 59 个用例：纯逻辑 + jsdom 真实加载产物跑 DOM 行为 + 假模型目录跑能量条
+npm test               # 60 个用例：纯逻辑 + jsdom 真实加载产物跑 DOM 行为 + 假模型目录跑能量条
 npm run check:browser  # 真实 Chrome 自检：**不需要** dsh web 在跑，量尺寸/验焦点行为
 node scripts/e2e-dsh.mjs --screenshot out.png   # 真实浏览器端到端（需要本机跑着 dsh web）
 node scripts/e2e-dsh.mjs --skip-effort          # 不碰推理强度设置的那一轮

@@ -1,4 +1,4 @@
-/* dsh-model-search：注入到页面的样式。
+/* dsh-model-cascade：注入到页面的样式。
  * 颜色一律走 DSH 主题变量并带兜底值，浅色/深色主题与各种皮肤下都能融入。 */
 
 .dms-bar {

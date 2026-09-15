@@ -37,7 +37,7 @@ const hasFlag = (name) => argv.includes(`--${name}`);
 const ORIGIN = flag("url", process.env.DSH_URL ?? "http://127.0.0.1:3080");
 const PORT = Number(flag("port", process.env.DSH_CDP_PORT ?? 9333));
 const CHROME = process.env.CHROME ?? "google-chrome";
-const PROFILE = flag("profile-dir", "/tmp/dsh-model-search-e2e");
+const PROFILE = flag("profile-dir", "/tmp/dsh-model-cascade-e2e");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -190,7 +190,7 @@ const driverFor = (PROVIDER, FINAL_QUERY) => String.raw`(async () => {
   // 1) 等应用启动 + 等本插件挂上
   const api = await waitFor(() => window.dshModelSearch, "dshModelSearch", 40000);
   note("插件已加载", api ? "window.dshModelSearch = v" + api.version : "❌ 没等到 window.dshModelSearch");
-  note("样式已注入", document.querySelectorAll('style[data-plugin="dsh-model-search"]').length + " 个 style 标签");
+  note("样式已注入", document.querySelectorAll('style[data-plugin="dsh-model-cascade"]').length + " 个 style 标签");
 
   // 2) 关掉可能挡路的首启弹窗
   for (let i = 0; i < 4; i += 1) {

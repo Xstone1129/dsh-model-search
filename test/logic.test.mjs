@@ -70,5 +70,5 @@ test("产物契约：导出 apply / inject，且不注入任何宿主服务", ()
   const { exports } = env;
   assert.equal(typeof exports.apply, "function");
   assert.deepEqual([...exports.inject], []);
-  assert.equal(exports.name, "dsh-model-search");
+  assert.equal(exports.name, "dsh-model-cascade");
 });

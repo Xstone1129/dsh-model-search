@@ -63,7 +63,7 @@ async function ensureChrome() {
     [
       "--headless=new",
       `--remote-debugging-port=${PORT}`,
-      `--user-data-dir=${flag("profile-dir", "/tmp/dsh-model-search-check")}`,
+      `--user-data-dir=${flag("profile-dir", "/tmp/dsh-model-cascade-check")}`,
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-gpu",

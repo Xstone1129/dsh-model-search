@@ -113,7 +113,7 @@ function withEffort({ directory = fakeDirectory(), session = SESSION, options = 
   if (session !== null) {
     env.window.localStorage.setItem("dsh.sessions.current", JSON.stringify({ sessionId: session }));
   }
-  env.window.localStorage.setItem("dsh-model-search:options", JSON.stringify({ autoFocus: false, ...options }));
+  env.window.localStorage.setItem("dsh-model-cascade:options", JSON.stringify({ autoFocus: false, ...options }));
   if (directory !== null) {
     env.ctx.services.set("modelDirectories", {
       directoryFor: (id) => {

@@ -37,7 +37,9 @@
     "build": "node scripts/build.mjs",
     "test": "node --test",
     "check:browser": "node scripts/browser-check.mjs",
-    "check": "npm run build && npm test && npm run check:browser"
+    "check": "npm run build && npm test && npm run check:browser",
+    "release": "npm run build && npm test && npm publish --registry=https://registry.npmjs.org",
+    "publish:check": "npm pack --dry-run"
   },
   "keywords": [
     "deepseek-harness",
